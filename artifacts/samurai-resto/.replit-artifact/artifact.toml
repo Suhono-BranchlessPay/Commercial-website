@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Samurai Resto"
+version = "1.0.0"
+id = "artifacts/samurai-resto"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 26204
+
+[services.development]
+run = "pnpm --filter @workspace/samurai-resto run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/samurai-resto", "run", "build" ]
+publicDir = "artifacts/samurai-resto/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "26204"
+BASE_PATH = "/"
