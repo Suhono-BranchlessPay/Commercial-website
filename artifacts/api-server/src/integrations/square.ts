@@ -95,14 +95,17 @@ export async function sendOrderToSquare(
           ...(input.orderType === "pickup"
             ? {
                 pickup_details: {
+                  schedule_type: "ASAP",
                   recipient: {
                     display_name: input.customerName,
                     phone_number: input.customerPhone,
                   },
+                  note: input.specialInstructions ?? undefined,
                 },
               }
             : {
                 delivery_details: {
+                  schedule_type: "ASAP",
                   recipient: {
                     display_name: input.customerName,
                     phone_number: input.customerPhone,
@@ -110,6 +113,7 @@ export async function sendOrderToSquare(
                       address_line_1: input.deliveryAddress ?? "",
                     },
                   },
+                  note: input.specialInstructions ?? undefined,
                 },
               }),
         },
@@ -144,8 +148,41 @@ export async function sendOrderToSquare(
     order: { id: string; version: number };
   };
 
+  const squareOrderId = data.order.id;
+
+  // Mark paid via EXTERNAL so ticket routes to POS/KDS (website order already committed)
+  const payResponse = await fetch(`${SQUARE_BASE_URL}/v2/payments`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SQUARE_ACCESS_TOKEN}`,
+      "Square-Version": "2024-11-20",
+    },
+    body: JSON.stringify({
+      idempotency_key: `pay-${input.orderId}`,
+      source_id: "EXTERNAL",
+      amount_money: {
+        amount: Math.round(input.total * 100),
+        currency: "USD",
+      },
+      order_id: squareOrderId,
+      location_id: SQUARE_LOCATION_ID,
+      external_details: {
+        type: "OTHER",
+        source: "Samurai Website",
+        source_id: input.orderId,
+      },
+      autocomplete: true,
+    }),
+  });
+
+  if (!payResponse.ok) {
+    const payErr = await payResponse.text();
+    throw new Error(`Square payment error ${payResponse.status}: ${payErr}`);
+  }
+
   return {
-    squareOrderId: data.order.id,
+    squareOrderId,
     squareOrderVersion: data.order.version,
   };
 }
