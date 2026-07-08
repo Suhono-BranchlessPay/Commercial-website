@@ -7,6 +7,7 @@ import { z } from "zod";
 import { checkPin } from "../lib/ownerAuth";
 import {
   isSquareConfigured,
+  isSquareWebPaymentsConfigured,
   sendOrderToSquare,
 } from "../integrations/square";
 import {
@@ -38,6 +39,8 @@ const orderInputSchema = z.object({
   deliveryAddress: z.string().nullable().optional(),
   items: z.array(orderLineInputSchema).min(1),
   specialInstructions: z.string().nullable().optional(),
+  paymentTiming: z.enum(["pay_now", "pay_at_pickup"]).default("pay_at_pickup"),
+  squarePaymentSourceId: z.string().nullable().optional(),
 });
 
 router.post("/orders", async (req, res): Promise<void> => {
@@ -51,14 +54,21 @@ router.post("/orders", async (req, res): Promise<void> => {
 
   try {
     const menuItemIds = input.items.map((i) => i.menuItemId);
-    const menuItemMap: Record<string, { name: string; price: number }> = {};
+    const menuItemMap: Record<
+      string,
+      { name: string; price: number; sku: string }
+    > = {};
     for (const id of menuItemIds) {
       const rows = await db
         .select()
         .from(menuItemsTable)
         .where(eq(menuItemsTable.id, id));
       if (rows[0]) {
-        menuItemMap[id] = { name: rows[0].name, price: rows[0].price };
+        menuItemMap[id] = {
+          name: rows[0].name,
+          price: rows[0].price,
+          sku: rows[0].sku,
+        };
       }
     }
 
@@ -113,6 +123,9 @@ router.post("/orders", async (req, res): Promise<void> => {
       }
     }
 
+    const paymentTiming = input.paymentTiming ?? "pay_at_pickup";
+    const paymentStatus = paymentTiming === "pay_now" ? "paid" : "unpaid";
+
     // Simpan order ke database
     await db.insert(ordersTable).values({
       id: orderId,
@@ -125,7 +138,10 @@ router.post("/orders", async (req, res): Promise<void> => {
       tax,
       total,
       status: "pending",
+      paymentTiming,
+      paymentStatus,
       squareOrderId: null,
+      squarePaymentId: null,
       specialInstructions: input.specialInstructions ?? null,
     });
 
@@ -149,19 +165,34 @@ router.post("/orders", async (req, res): Promise<void> => {
           items: lines.map((l) => ({
             menuItemId: l.menuItemId,
             menuItemName: l.menuItemName,
+            sku: menuItemMap[l.menuItemId]?.sku,
             quantity: l.quantity,
             unitPrice: l.unitPrice,
+            specialInstructions: l.specialInstructions,
           })),
           subtotal,
           tax,
           total,
           specialInstructions: input.specialInstructions,
+          paymentTiming,
+          squarePaymentSourceId: input.squarePaymentSourceId,
         });
         await db
           .update(ordersTable)
-          .set({ squareOrderId: squareResult.squareOrderId })
+          .set({
+            squareOrderId: squareResult.squareOrderId,
+            squarePaymentId: squareResult.squarePaymentId,
+            paymentStatus: squareResult.paid ? "paid" : "unpaid",
+          })
           .where(eq(ordersTable.id, orderId));
-        req.log.info({ squareOrderId: squareResult.squareOrderId }, "Order sent to Square POS");
+        req.log.info(
+          {
+            squareOrderId: squareResult.squareOrderId,
+            paid: squareResult.paid,
+            paymentTiming,
+          },
+          "Order sent to Square POS",
+        );
       } catch (err) {
         req.log.error({ err }, "Failed to send order to Square — order still saved in DB");
       }
@@ -330,6 +361,23 @@ router.get("/owner/stats", async (req, res): Promise<void> => {
     req.log.error({ err }, "Owner stats failed");
     res.status(500).json({ error: "Failed to load stats" });
   }
+});
+
+router.get("/owner/integrations", async (req, res): Promise<void> => {
+  if (!(await checkPin(req.query.pin))) {
+    res.status(401).json({ error: "Invalid PIN" });
+    return;
+  }
+  res.json({
+    square: {
+      configured: isSquareConfigured(),
+      webPayments: isSquareWebPaymentsConfigured(),
+      environment: process.env.SQUARE_ENVIRONMENT ?? "sandbox",
+    },
+    doordash: { configured: isDoordashConfigured() },
+    branchlesspay: { configured: isBranchlesspayConfigured() },
+    owner: { configured: isOwnerConfigured() },
+  });
 });
 
 router.patch("/owner/orders/:id/status", async (req, res): Promise<void> => {

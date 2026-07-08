@@ -32,7 +32,10 @@ export const ordersTable = pgTable("orders", {
   tax: real("tax").notNull(),
   total: real("total").notNull(),
   status: text("status").notNull().default("pending"),
+  paymentTiming: text("payment_timing").notNull().default("pay_at_pickup"),
+  paymentStatus: text("payment_status").notNull().default("unpaid"),
   squareOrderId: text("square_order_id"),
+  squarePaymentId: text("square_payment_id"),
   specialInstructions: text("special_instructions"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

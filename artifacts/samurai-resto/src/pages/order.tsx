@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -11,8 +11,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ArrowRight, CheckCircle2, ShoppingBag, Loader2, Pencil, MapPin, Phone, User, Package } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, ShoppingBag, Loader2, Pencil, MapPin, Phone, User, Package, CreditCard, Wallet } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import { SquareCardPayment, type SquareCardHandle } from "@/components/SquareCardPayment";
+
+const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 /* ── Schema ── */
 const detailsSchema = z.object({
@@ -73,6 +76,17 @@ export default function Order() {
 
   const [step, setStep]                   = useState(0); // 0=Cart 1=Details 2=Confirm 3=Done
   const [successOrderId, setSuccessOrderId] = useState<string | null>(null);
+  const [paymentTiming, setPaymentTiming] = useState<"pay_now" | "pay_at_pickup">("pay_at_pickup");
+  const [cardReady, setCardReady] = useState(false);
+  const [squarePaymentsEnabled, setSquarePaymentsEnabled] = useState(false);
+  const cardRef = useRef<SquareCardHandle>(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/square/config`)
+      .then((r) => r.json())
+      .then((c: { enabled?: boolean }) => setSquarePaymentsEnabled(Boolean(c.enabled)))
+      .catch(() => setSquarePaymentsEnabled(false));
+  }, []);
 
   const form = useForm<DetailsValues>({
     resolver: zodResolver(detailsSchema),
@@ -106,10 +120,35 @@ export default function Order() {
   };
 
   /* ── Step 2 → submit ── */
-  const placeOrder = () => {
+  const placeOrder = async () => {
     const data = form.getValues();
+    let squarePaymentSourceId: string | null = null;
+
+    if (paymentTiming === "pay_now") {
+      if (!cardRef.current?.isReady()) {
+        toast({
+          title: "Payment required",
+          description: "Enter your card details to pay now.",
+          variant: "destructive",
+        });
+        return;
+      }
+      try {
+        squarePaymentSourceId = await cardRef.current.tokenize();
+      } catch (err) {
+        toast({
+          title: "Payment failed",
+          description: err instanceof Error ? err.message : "Could not process card.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     const orderInput = {
       ...data,
+      paymentTiming,
+      squarePaymentSourceId,
       items: items.map(item => ({
         menuItemId: item.menuItem.id,
         quantity: item.quantity,
@@ -161,7 +200,11 @@ export default function Order() {
               </div>
             )}
           </div>
-          <p className="text-xs text-muted-foreground mb-6">We'll call you at {values.customerPhone} when your order is ready.</p>
+          <p className="text-xs text-muted-foreground mb-6">
+            {paymentTiming === "pay_now"
+              ? "Your card has been charged. We'll call you when your order is ready."
+              : `We'll call you at ${values.customerPhone} when your order is ready. Pay when you pick up.`}
+          </p>
           <Button asChild className="w-full h-12 text-base bg-primary hover:bg-primary/90 text-white">
             <Link href="/">← Back to Home</Link>
           </Button>
@@ -399,18 +442,58 @@ export default function Order() {
               </div>
             </div>
 
+            {/* Payment method */}
+            <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
+              <h2 className="font-serif text-xl text-foreground">Payment</h2>
+              <RadioGroup
+                value={paymentTiming}
+                onValueChange={(v) => setPaymentTiming(v as "pay_now" | "pay_at_pickup")}
+                className="grid grid-cols-1 sm:grid-cols-2 gap-4"
+              >
+                <label className="cursor-pointer">
+                  <RadioGroupItem value="pay_at_pickup" className="peer sr-only" />
+                  <div className="flex flex-col rounded-xl border-2 border-border bg-popover p-5 hover:border-primary/50 peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/5 transition-all h-full">
+                    <Wallet className="h-6 w-6 text-primary mb-2" />
+                    <span className="font-semibold text-foreground">Pay at pickup</span>
+                    <span className="text-xs text-muted-foreground mt-1">Pay the cashier when you collect your order</span>
+                  </div>
+                </label>
+                {squarePaymentsEnabled && (
+                <label className="cursor-pointer">
+                  <RadioGroupItem value="pay_now" className="peer sr-only" />
+                  <div className="flex flex-col rounded-xl border-2 border-border bg-popover p-5 hover:border-primary/50 peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/5 transition-all h-full">
+                    <CreditCard className="h-6 w-6 text-primary mb-2" />
+                    <span className="font-semibold text-foreground">Pay now</span>
+                    <span className="text-xs text-muted-foreground mt-1">Pay securely online — skip the line at pickup</span>
+                  </div>
+                </label>
+                )}
+              </RadioGroup>
+
+              {paymentTiming === "pay_now" && (
+                <div className="pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <p className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
+                    <CreditCard className="h-4 w-4 text-primary" /> Card details
+                  </p>
+                  <SquareCardPayment ref={cardRef} onReadyChange={setCardReady} />
+                </div>
+              )}
+            </div>
+
             <div className="flex gap-3">
               <Button variant="outline" onClick={() => setStep(1)} className="flex-1 border-border">
                 <ArrowLeft className="mr-2 h-4 w-4" /> Back
               </Button>
               <Button
                 onClick={placeOrder}
-                disabled={createOrder.isPending}
+                disabled={createOrder.isPending || (paymentTiming === "pay_now" && !cardReady)}
                 className="flex-2 flex-[2] bg-primary hover:bg-primary/90 text-white h-14 text-base shadow-lg shadow-primary/20"
               >
                 {createOrder.isPending
                   ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Placing Order…</>
-                  : <>✓ Place Order · ${total.toFixed(2)}</>}
+                  : paymentTiming === "pay_now"
+                    ? <>✓ Pay &amp; Place Order · ${total.toFixed(2)}</>
+                    : <>✓ Place Order · Pay at Pickup</>}
               </Button>
             </div>
 

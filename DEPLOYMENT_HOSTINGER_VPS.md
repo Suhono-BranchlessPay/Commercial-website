@@ -177,6 +177,7 @@ module.exports = {
         // Kosongkan/hapus baris-baris ini kalau belum pakai Square.
         SQUARE_ACCESS_TOKEN: "GANTI_DENGAN_ACCESS_TOKEN_SQUARE",
         SQUARE_LOCATION_ID: "GANTI_DENGAN_LOCATION_ID_SQUARE",
+        SQUARE_APPLICATION_ID: "GANTI_DENGAN_APPLICATION_ID_SQUARE",
         SQUARE_ENVIRONMENT: "production",
       },
     },

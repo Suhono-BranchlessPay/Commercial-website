@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { TrendingUp, ShoppingBag, Clock, RefreshCw, LogOut, WifiOff, DollarSign, Users, CheckCircle2, ChefHat, Download, Mail, Phone, Building2, UserCheck, ImagePlus, ImageOff, Search, Pencil, Lock, KeyRound } from "lucide-react";
+import { TrendingUp, ShoppingBag, Clock, RefreshCw, LogOut, Wifi, WifiOff, DollarSign, Users, CheckCircle2, ChefHat, Download, Mail, Phone, Building2, UserCheck, ImagePlus, ImageOff, Search, Pencil, Lock, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { IMAGE_MAP } from "@/components/MenuItemCard";
@@ -13,9 +13,18 @@ interface Order {
   orderType: string;
   total: number;
   status: string;
+  paymentTiming?: string;
+  paymentStatus?: string;
   createdAt: string;
   subtotal: number;
   tax: number;
+}
+
+interface IntegrationsStatus {
+  square: { configured: boolean; webPayments: boolean; environment: string };
+  doordash: { configured: boolean };
+  branchlesspay: { configured: boolean };
+  owner: { configured: boolean };
 }
 
 interface Stats {
@@ -540,12 +549,17 @@ function Dashboard({ pin, onLogout, onPinChanged }: { pin: string; onLogout: () 
   const [custLoading, setCustLoading]     = useState(false);
   const [custExpanded, setCustExpanded]   = useState(false);
   const [exporting, setExporting]         = useState(false);
+  const [integrations, setIntegrations]   = useState<IntegrationsStatus | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/owner/stats?pin=${encodeURIComponent(pin)}`);
-      if (res.ok) { setStats(await res.json()); setLastRefresh(new Date()); }
+      const [statsRes, intRes] = await Promise.all([
+        fetch(`${API_BASE}/api/owner/stats?pin=${encodeURIComponent(pin)}`),
+        fetch(`${API_BASE}/api/owner/integrations?pin=${encodeURIComponent(pin)}`),
+      ]);
+      if (statsRes.ok) { setStats(await statsRes.json()); setLastRefresh(new Date()); }
+      if (intRes.ok) { setIntegrations(await intRes.json()); }
     } finally { setLoading(false); }
   }, [pin]);
 
@@ -669,12 +683,28 @@ function Dashboard({ pin, onLogout, onPinChanged }: { pin: string; onLogout: () 
           <h2 className="font-serif text-lg text-foreground mb-4">Integration Status</h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[
-              { name: "Square POS", status: "configured", note: "Connect via env var" },
-              { name: "DoorDash",   status: "configured", note: "Connect via env var" },
-              { name: "BP Audit",   status: "configured", note: "Connect via env var" },
+              {
+                name: "Square POS",
+                ok: integrations?.square.configured ?? false,
+                note: integrations?.square.configured
+                  ? `Connected · ${integrations.square.environment}${integrations.square.webPayments ? " · Web Pay" : ""}`
+                  : "Set SQUARE_ACCESS_TOKEN + SQUARE_LOCATION_ID",
+              },
+              {
+                name: "DoorDash",
+                ok: integrations?.doordash.configured ?? false,
+                note: integrations?.doordash.configured ? "Connected" : "Set DOORDASH_* env vars",
+              },
+              {
+                name: "BP Audit",
+                ok: integrations?.branchlesspay.configured ?? false,
+                note: integrations?.branchlesspay.configured ? "Connected" : "Set BP_* env vars",
+              },
             ].map(int => (
               <div key={int.name} className="flex items-center gap-3 bg-background border border-border rounded-xl px-4 py-3">
-                <WifiOff className="h-4 w-4 text-muted-foreground" />
+                {int.ok
+                  ? <Wifi className="h-4 w-4 text-green-500" />
+                  : <WifiOff className="h-4 w-4 text-muted-foreground" />}
                 <div>
                   <p className="text-sm font-semibold text-foreground">{int.name}</p>
                   <p className="text-xs text-muted-foreground">{int.note}</p>
@@ -712,6 +742,11 @@ function Dashboard({ pin, onLogout, onPinChanged }: { pin: string; onLogout: () 
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${statusStyle.className}`}>
                           {statusStyle.label}
                         </span>
+                        {order.paymentStatus === "paid" ? (
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full border bg-green-500/10 text-green-500 border-green-500/30">Paid</span>
+                        ) : order.paymentStatus === "unpaid" ? (
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full border bg-orange-500/10 text-orange-400 border-orange-500/30">Unpaid</span>
+                        ) : null}
                         <span className="text-xs text-muted-foreground">{fmtTime(order.createdAt)}</span>
                       </div>
                       <p className="text-sm text-foreground font-medium truncate">{order.customerName}</p>

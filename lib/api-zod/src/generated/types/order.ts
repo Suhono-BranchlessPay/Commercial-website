@@ -24,6 +24,10 @@ export interface Order {
   status: OrderStatus;
   /** @nullable */
   squareOrderId?: string | null;
+  paymentTiming?: string;
+  paymentStatus?: string;
+  /** @nullable */
+  squarePaymentId?: string | null;
   /** @nullable */
   specialInstructions?: string | null;
   createdAt: string;

@@ -5,6 +5,7 @@ import ordersRouter from "./orders";
 import customersRouter from "./customers";
 import settingsRouter from "./settings";
 import versionRouter from "./version";
+import squareRouter from "./square";
 
 const router: IRouter = Router();
 
@@ -14,5 +15,6 @@ router.use(ordersRouter);
 router.use(customersRouter);
 router.use(settingsRouter);
 router.use(versionRouter);
+router.use(squareRouter);
 
 export default router;
