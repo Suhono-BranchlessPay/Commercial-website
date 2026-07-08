@@ -286,6 +286,7 @@ export async function sendOrderToSquare(
           pickup_details: {
             schedule_type: "ASAP",
             prep_time_duration: PREP_TIME_DURATION,
+            auto_complete_duration: "PT60M",
             recipient: {
               display_name: input.customerName,
               phone_number: input.customerPhone,
@@ -295,10 +296,11 @@ export async function sendOrderToSquare(
         }
       : {
           type: "DELIVERY" as const,
-          delivery_details: {
-            schedule_type: "ASAP",
-            prep_time_duration: PREP_TIME_DURATION,
-            recipient: {
+            delivery_details: {
+              schedule_type: "ASAP",
+              prep_time_duration: PREP_TIME_DURATION,
+              auto_complete_duration: "PT60M",
+              recipient: {
               display_name: input.customerName,
               phone_number: input.customerPhone,
               address: {
@@ -362,4 +364,47 @@ export async function sendOrderToSquare(
     squareOrderVersion: orderVersion,
     squarePaymentId,
   };
+}
+
+type OwnerFulfillmentSync = "ready" | "completed" | "cancelled";
+
+const FULFILLMENT_STATE: Record<OwnerFulfillmentSync, string> = {
+  ready: "PREPARED",
+  completed: "COMPLETED",
+  cancelled: "CANCELED",
+};
+
+/**
+ * Sync owner dashboard status → Square fulfillment so paid orders leave "In progress".
+ * completed → COMPLETED (order hilang dari Active di kasir Square).
+ */
+export async function syncSquareOrderFromOwnerStatus(
+  squareOrderId: string,
+  status: OwnerFulfillmentSync,
+): Promise<void> {
+  if (!isSquareConfigured()) return;
+
+  const targetState = FULFILLMENT_STATE[status];
+  const current = await fetchSquareOrder(squareOrderId);
+  const fulfillment = current.order?.fulfillments?.[0];
+  if (!fulfillment?.uid) return;
+
+  if (fulfillment.state === targetState) return;
+
+  const body: Record<string, unknown> = {
+    idempotency_key: `owner-${status}-${squareOrderId}-${current.order.version}`,
+    order: {
+      version: current.order.version,
+      fulfillments: [{ uid: fulfillment.uid, state: targetState }],
+    },
+  };
+
+  if (status === "completed") {
+    (body.order as Record<string, unknown>).state = "COMPLETED";
+  }
+
+  await squareRequest(`/v2/orders/${squareOrderId}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
 }

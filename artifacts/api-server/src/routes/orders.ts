@@ -9,6 +9,7 @@ import {
   isSquareConfigured,
   isSquareWebPaymentsConfigured,
   sendOrderToSquare,
+  syncSquareOrderFromOwnerStatus,
 } from "../integrations/square";
 import {
   isDoordashConfigured,
@@ -393,7 +394,32 @@ router.patch("/owner/orders/:id/status", async (req, res): Promise<void> => {
     return;
   }
   try {
+    const rows = await db
+      .select()
+      .from(ordersTable)
+      .where(eq(ordersTable.id, req.params.id));
+    const order = rows[0];
+    if (!order) {
+      res.status(404).json({ error: "Order not found" });
+      return;
+    }
+
     await db.update(ordersTable).set({ status }).where(eq(ordersTable.id, req.params.id));
+
+    if (
+      order.squareOrderId &&
+      (status === "ready" || status === "completed" || status === "cancelled")
+    ) {
+      try {
+        await syncSquareOrderFromOwnerStatus(
+          order.squareOrderId,
+          status as "ready" | "completed" | "cancelled",
+        );
+      } catch (err) {
+        req.log.error({ err, squareOrderId: order.squareOrderId }, "Square status sync failed");
+      }
+    }
+
     res.json({ ok: true });
   } catch (err) {
     req.log.error({ err }, "Status update failed");
