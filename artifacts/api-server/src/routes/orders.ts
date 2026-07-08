@@ -39,8 +39,7 @@ const orderInputSchema = z.object({
   deliveryAddress: z.string().nullable().optional(),
   items: z.array(orderLineInputSchema).min(1),
   specialInstructions: z.string().nullable().optional(),
-  paymentTiming: z.enum(["pay_now", "pay_at_pickup"]).default("pay_at_pickup"),
-  squarePaymentSourceId: z.string().nullable().optional(),
+  squarePaymentSourceId: z.string().min(1, "Card payment token is required"),
 });
 
 router.post("/orders", async (req, res): Promise<void> => {
@@ -123,10 +122,57 @@ router.post("/orders", async (req, res): Promise<void> => {
       }
     }
 
-    const paymentTiming = input.paymentTiming ?? "pay_at_pickup";
-    const paymentStatus = paymentTiming === "pay_now" ? "paid" : "unpaid";
+    const paymentTiming = "pay_now";
+    const paymentStatus = "paid";
 
-    // Simpan order ke database
+    if (!isSquareWebPaymentsConfigured()) {
+      res.status(503).json({
+        error:
+          "Online ordering is temporarily unavailable. Please call the restaurant to place your order.",
+      });
+      return;
+    }
+
+    let squareResult: Awaited<ReturnType<typeof sendOrderToSquare>> | null = null;
+    try {
+      squareResult = await sendOrderToSquare({
+        orderId,
+        customerName: input.customerName,
+        customerPhone: input.customerPhone,
+        orderType: input.orderType,
+        deliveryAddress: input.deliveryAddress,
+        items: lines.map((l) => ({
+          menuItemId: l.menuItemId,
+          menuItemName: l.menuItemName,
+          sku: menuItemMap[l.menuItemId]?.sku,
+          quantity: l.quantity,
+          unitPrice: l.unitPrice,
+          specialInstructions: l.specialInstructions,
+        })),
+        subtotal,
+        tax,
+        total,
+        specialInstructions: input.specialInstructions,
+        squarePaymentSourceId: input.squarePaymentSourceId,
+      });
+      req.log.info(
+        {
+          squareOrderId: squareResult.squareOrderId,
+          squarePaymentId: squareResult.squarePaymentId,
+        },
+        "Square prepaid order charged and sent to kitchen",
+      );
+    } catch (err) {
+      req.log.error({ err }, "Square payment failed — order not saved");
+      const message =
+        err instanceof Error
+          ? err.message.replace(/^Payment failed: /, "")
+          : "Your card could not be charged. Please try another card.";
+      res.status(402).json({ error: message });
+      return;
+    }
+
+    // Simpan order ke database hanya setelah charge kartu + kitchen fire sukses
     await db.insert(ordersTable).values({
       id: orderId,
       customerName: input.customerName,
@@ -140,8 +186,8 @@ router.post("/orders", async (req, res): Promise<void> => {
       status: "pending",
       paymentTiming,
       paymentStatus,
-      squareOrderId: null,
-      squarePaymentId: null,
+      squareOrderId: squareResult.squareOrderId,
+      squarePaymentId: squareResult.squarePaymentId,
       specialInstructions: input.specialInstructions ?? null,
     });
 
@@ -151,51 +197,6 @@ router.post("/orders", async (req, res): Promise<void> => {
         orderId,
         ...line,
       });
-    }
-
-    // Square POS — kirim order ke Square setelah tersimpan ke DB
-    if (isSquareConfigured()) {
-      try {
-        const squareResult = await sendOrderToSquare({
-          orderId,
-          customerName: input.customerName,
-          customerPhone: input.customerPhone,
-          orderType: input.orderType,
-          deliveryAddress: input.deliveryAddress,
-          items: lines.map((l) => ({
-            menuItemId: l.menuItemId,
-            menuItemName: l.menuItemName,
-            sku: menuItemMap[l.menuItemId]?.sku,
-            quantity: l.quantity,
-            unitPrice: l.unitPrice,
-            specialInstructions: l.specialInstructions,
-          })),
-          subtotal,
-          tax,
-          total,
-          specialInstructions: input.specialInstructions,
-          paymentTiming,
-          squarePaymentSourceId: input.squarePaymentSourceId,
-        });
-        await db
-          .update(ordersTable)
-          .set({
-            squareOrderId: squareResult.squareOrderId,
-            squarePaymentId: squareResult.squarePaymentId,
-            paymentStatus: squareResult.paid ? "paid" : "unpaid",
-          })
-          .where(eq(ordersTable.id, orderId));
-        req.log.info(
-          {
-            squareOrderId: squareResult.squareOrderId,
-            paid: squareResult.paid,
-            paymentTiming,
-          },
-          "Order sent to Square POS",
-        );
-      } catch (err) {
-        req.log.error({ err }, "Failed to send order to Square — order still saved in DB");
-      }
     }
 
     // DoorDash Drive — dispatch kurir untuk order delivery

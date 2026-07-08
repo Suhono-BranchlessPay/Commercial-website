@@ -19,7 +19,5 @@ export interface OrderInput {
   items: OrderLineInput[];
   /** @nullable */
   specialInstructions?: string | null;
-  paymentTiming?: 'pay_now' | 'pay_at_pickup';
-  /** @nullable */
-  squarePaymentSourceId?: string | null;
+  squarePaymentSourceId: string;
 }

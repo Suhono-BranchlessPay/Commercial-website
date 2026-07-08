@@ -232,16 +232,17 @@ components:
           type: ["string", "null"]
         paymentTiming:
           type: string
-          enum: [pay_now, pay_at_pickup]
-          default: pay_at_pickup
+          enum: [pay_now]
+          default: pay_now
         squarePaymentSourceId:
-          type: ["string", "null"]
-          description: Card nonce from Square Web Payments SDK (required when paymentTiming is pay_now)
+          type: string
+          description: Card nonce from Square Web Payments SDK (required)
       required:
         - customerName
         - customerPhone
         - orderType
         - items
+        - squarePaymentSourceId
 
     OrderLine:
       type: object

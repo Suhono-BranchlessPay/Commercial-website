@@ -9,7 +9,7 @@ WEB="$ROOT/artifacts/samurai-resto"
 REPO="${SAMURAI_GITHUB_REPO:-https://github.com/Suhono-BranchlessPay/Commercial-website.git}"
 TMP="/tmp/samurai-deploy-src"
 
-echo "==> Samurai deploy: kitchen + payments"
+echo "==> Samurai deploy: prepaid card payments only (no EXTERNAL)"
 echo "    ROOT=$ROOT"
 
 # ── DATABASE_URL (avoid export \$(cat .env) — breaks on special chars) ──
@@ -87,5 +87,4 @@ pm2 status samurai-api
 echo ""
 echo "==> Done."
 echo "    Pay Now needs: SQUARE_APPLICATION_ID in ecosystem.config.cjs / .env"
-echo "    Test Mode B: checkout → Pay at pickup → Square UNPAID + kitchen fire"
-echo "    Test Mode A: checkout → Pay now (card) → Square PAID + kitchen fire"
+echo "    Test: card charge → Square shows Visa/MC •••• → kitchen prints"

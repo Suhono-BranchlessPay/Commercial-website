@@ -1,11 +1,9 @@
 /**
- * Square POS Integration
+ * Square POS Integration — prepaid web orders only.
  *
- * Kitchen auto-fire: create order → accept fulfillment (RESERVED) → optional payment.
- * Pay at pickup skips payment so order stays OPEN/UNPAID in Square.
+ * Flow: CreateOrder → Charge card (Web Payments token) → Accept kitchen (RESERVED).
+ * Payment MUST succeed before kitchen auto-fire. No EXTERNAL / fake-paid payments.
  */
-
-export type PaymentTiming = "pay_now" | "pay_at_pickup";
 
 export interface SquareOrderItem {
   menuItemId: string;
@@ -27,16 +25,14 @@ export interface SquareOrderInput {
   tax: number;
   total: number;
   specialInstructions?: string | null;
-  paymentTiming: PaymentTiming;
-  /** Card nonce from Square Web Payments SDK (pay_now). */
-  squarePaymentSourceId?: string | null;
+  /** Card nonce from Square Web Payments SDK — required for every web order. */
+  squarePaymentSourceId: string;
 }
 
 export interface SquareOrderResult {
   squareOrderId: string;
   squareOrderVersion: number;
-  squarePaymentId: string | null;
-  paid: boolean;
+  squarePaymentId: string;
 }
 
 const SQUARE_ACCESS_TOKEN = process.env.SQUARE_ACCESS_TOKEN;
@@ -50,12 +46,9 @@ const SQUARE_BASE_URL =
     ? "https://connect.squareup.com"
     : "https://connect.squareupsandbox.com";
 
-/** Default kitchen prep window shown on website (20–30 min). */
 const PREP_TIME_DURATION = "PT20M";
 
 type CatalogVariation = { id: string; version: number };
-
-/** SKU → Square ITEM_VARIATION (kitchen printers route by catalog category). */
 const catalogBySku = new Map<string, CatalogVariation>();
 
 export function isSquareConfigured(): boolean {
@@ -63,7 +56,9 @@ export function isSquareConfigured(): boolean {
 }
 
 export function isSquareWebPaymentsConfigured(): boolean {
-  return Boolean(SQUARE_APPLICATION_ID && SQUARE_LOCATION_ID);
+  return Boolean(
+    SQUARE_APPLICATION_ID && SQUARE_ACCESS_TOKEN && SQUARE_LOCATION_ID,
+  );
 }
 
 export function getSquarePublicConfig():
@@ -207,11 +202,25 @@ async function updateFulfillmentState(
   });
 }
 
-/**
- * Auto-accept online order → RESERVED (same as staff tapping Accept in Order Manager).
- * Must run before or without payment so kitchen ticket fires for pay-at-pickup orders.
- */
-export async function acceptOrderForKitchen(squareOrderId: string): Promise<void> {
+async function cancelSquareOrder(
+  squareOrderId: string,
+  version: number,
+): Promise<void> {
+  try {
+    await squareRequest(`/v2/orders/${squareOrderId}/cancel`, {
+      method: "POST",
+      body: JSON.stringify({
+        idempotency_key: `cancel-${squareOrderId}`,
+        version,
+      }),
+    });
+  } catch (err) {
+    console.error("[Square] failed to cancel unpaid order:", err);
+  }
+}
+
+/** Auto-accept → RESERVED → kitchen ticket prints. Only after successful card charge. */
+async function acceptOrderForKitchen(squareOrderId: string): Promise<void> {
   const current = await fetchSquareOrder(squareOrderId);
   const fulfillment = current.order?.fulfillments?.[0];
   if (!fulfillment?.uid) {
@@ -231,16 +240,10 @@ export async function acceptOrderForKitchen(squareOrderId: string): Promise<void
   );
 }
 
-async function createSquarePayment(
+async function chargeCardPayment(
   input: SquareOrderInput,
   squareOrderId: string,
 ): Promise<string> {
-  if (!input.squarePaymentSourceId) {
-    throw new Error(
-      "Pay now requires card payment. Set SQUARE_APPLICATION_ID and complete checkout card form.",
-    );
-  }
-
   const amountCents = Math.round(input.total * 100);
   const data = await squareRequest<{ payment: { id: string } }>("/v2/payments", {
     method: "POST",
@@ -257,20 +260,20 @@ async function createSquarePayment(
 }
 
 /**
- * Kirim order ke Square POS.
- * Flow: CreateOrder → Accept (RESERVED / auto-fire kitchen) → Payment (pay_now only).
+ * Prepaid web order: CreateOrder → Charge card → Fire kitchen.
+ * If card charge fails, order is cancelled and kitchen is NOT fired.
  */
 export async function sendOrderToSquare(
   input: SquareOrderInput,
 ): Promise<SquareOrderResult> {
-  if (!SQUARE_ACCESS_TOKEN || !SQUARE_LOCATION_ID) {
+  if (!isSquareWebPaymentsConfigured()) {
     throw new Error(
-      "Square not configured. Set SQUARE_ACCESS_TOKEN and SQUARE_LOCATION_ID.",
+      "Web checkout unavailable. Set SQUARE_APPLICATION_ID, SQUARE_ACCESS_TOKEN, and SQUARE_LOCATION_ID.",
     );
   }
 
-  if (input.paymentTiming === "pay_now" && !input.squarePaymentSourceId) {
-    throw new Error("Payment required. Complete card details to pay now.");
+  if (!input.squarePaymentSourceId?.trim()) {
+    throw new Error("Card payment is required. Complete the secure card form.");
   }
 
   const lineItems = await buildSquareLineItems(input.items);
@@ -306,57 +309,57 @@ export async function sendOrderToSquare(
           },
         };
 
-  const orderBody = {
-    idempotency_key: input.orderId,
-    order: {
-      location_id: SQUARE_LOCATION_ID,
-      reference_id: input.orderId.slice(0, 40),
-      state: "OPEN",
-      ticket_name: ticketName,
-      source: { name: "Samurai Order Hub" },
-      line_items: lineItems,
-      taxes: [
-        {
-          name: "Sales Tax",
-          percentage: "7",
-          scope: "ORDER",
-        },
-      ],
-      fulfillments: [
-        {
-          ...fulfillmentBase,
-          state: "PROPOSED",
-        },
-      ],
-      metadata: {
-        source: "samurai-website",
-        payment_timing: input.paymentTiming,
-        ...(input.specialInstructions
-          ? { special_instructions: input.specialInstructions }
-          : {}),
-      },
-    },
-  };
-
   const data = await squareRequest<{ order: { id: string; version: number } }>(
     "/v2/orders",
-    { method: "POST", body: JSON.stringify(orderBody) },
+    {
+      method: "POST",
+      body: JSON.stringify({
+        idempotency_key: input.orderId,
+        order: {
+          location_id: SQUARE_LOCATION_ID,
+          reference_id: input.orderId.slice(0, 40),
+          state: "OPEN",
+          ticket_name: ticketName,
+          source: { name: "Samurai Order Hub" },
+          line_items: lineItems,
+          taxes: [
+            {
+              name: "Sales Tax",
+              percentage: "7",
+              scope: "ORDER",
+            },
+          ],
+          fulfillments: [{ ...fulfillmentBase, state: "PROPOSED" }],
+          metadata: {
+            source: "samurai-website",
+            payment_timing: "prepaid",
+            ...(input.specialInstructions
+              ? { special_instructions: input.specialInstructions }
+              : {}),
+          },
+        },
+      }),
+    },
   );
 
   const squareOrderId = data.order.id;
+  const orderVersion = data.order.version;
 
-  // Accept first — auto-fire kitchen without manual Accept tap (pay-at-pickup + pay-now)
-  await acceptOrderForKitchen(squareOrderId);
-
-  let squarePaymentId: string | null = null;
-  if (input.paymentTiming === "pay_now") {
-    squarePaymentId = await createSquarePayment(input, squareOrderId);
+  let squarePaymentId: string;
+  try {
+    squarePaymentId = await chargeCardPayment(input, squareOrderId);
+  } catch (err) {
+    await cancelSquareOrder(squareOrderId, orderVersion);
+    const message =
+      err instanceof Error ? err.message : "Card payment was declined";
+    throw new Error(`Payment failed: ${message}`);
   }
+
+  await acceptOrderForKitchen(squareOrderId);
 
   return {
     squareOrderId,
-    squareOrderVersion: data.order.version,
+    squareOrderVersion: orderVersion,
     squarePaymentId,
-    paid: input.paymentTiming === "pay_now",
   };
 }
