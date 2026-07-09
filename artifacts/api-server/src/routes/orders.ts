@@ -247,6 +247,7 @@ router.post("/orders", async (req, res): Promise<void> => {
         {
           squareOrderId: squareResult.squareOrderId,
           squarePaymentId: squareResult.squarePaymentId,
+          chargedTotalCents: squareResult.chargedTotalCents,
         },
         "Square prepaid order charged and sent to kitchen",
       );
@@ -260,6 +261,9 @@ router.post("/orders", async (req, res): Promise<void> => {
       return;
     }
 
+    const chargedTotal =
+      Math.round(squareResult.chargedTotalCents) / 100;
+
     await db.insert(ordersTable).values({
       id: orderId,
       tenantId,
@@ -272,7 +276,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       deliveryAddress: deliveryAddressFormatted,
       subtotal,
       tax,
-      total,
+      total: chargedTotal,
       status: "pending",
       paymentTiming,
       paymentStatus,
@@ -341,7 +345,7 @@ router.post("/orders", async (req, res): Promise<void> => {
         try {
           await refundSquarePayment(
             squareResult.squarePaymentId,
-            Math.round(total * 100),
+            squareResult.chargedTotalCents,
             orderId,
           );
           await db

@@ -40,6 +40,7 @@ export interface SquareOrderResult {
   squareOrderId: string;
   squareOrderVersion: number;
   squarePaymentId: string;
+  chargedTotalCents: number;
 }
 
 const SQUARE_ACCESS_TOKEN = process.env.SQUARE_ACCESS_TOKEN;
@@ -250,8 +251,8 @@ async function acceptOrderForKitchen(squareOrderId: string): Promise<void> {
 async function chargeCardPayment(
   input: SquareOrderInput,
   squareOrderId: string,
+  amountCents: number,
 ): Promise<string> {
-  const amountCents = Math.round(input.total * 100);
   const data = await squareRequest<{ payment: { id: string } }>("/v2/payments", {
     method: "POST",
     body: JSON.stringify({
@@ -288,6 +289,7 @@ export async function sendOrderToSquare(
     lineItems.push({
       name: "Delivery Fee",
       quantity: "1",
+      taxable: false,
       base_price_money: {
         amount: Math.round(input.deliveryFee * 100),
         currency: "USD",
@@ -344,7 +346,9 @@ export async function sendOrderToSquare(
           },
         };
 
-  const data = await squareRequest<{ order: { id: string; version: number } }>(
+  const data = await squareRequest<{
+    order: { id: string; version: number; total_money?: { amount: number } };
+  }>(
     "/v2/orders",
     {
       method: "POST",
@@ -379,10 +383,16 @@ export async function sendOrderToSquare(
 
   const squareOrderId = data.order.id;
   const orderVersion = data.order.version;
+  const chargedTotalCents =
+    data.order.total_money?.amount ?? Math.round(input.total * 100);
 
   let squarePaymentId: string;
   try {
-    squarePaymentId = await chargeCardPayment(input, squareOrderId);
+    squarePaymentId = await chargeCardPayment(
+      input,
+      squareOrderId,
+      chargedTotalCents,
+    );
   } catch (err) {
     await cancelSquareOrder(squareOrderId, orderVersion);
     const message =
@@ -396,6 +406,7 @@ export async function sendOrderToSquare(
     squareOrderId,
     squareOrderVersion: orderVersion,
     squarePaymentId,
+    chargedTotalCents,
   };
 }
 
