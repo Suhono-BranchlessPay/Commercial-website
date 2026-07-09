@@ -7,17 +7,22 @@
  */
 import type { OrderInputOrderType } from './orderInputOrderType';
 import type { OrderLineInput } from './orderLineInput';
+import type { StructuredAddress } from './structuredAddress';
 
 export interface OrderInput {
-  customerName: string;
+  firstName: string;
+  /** @nullable */
+  lastName?: string | null;
   customerPhone: string;
   /** @nullable */
   customerEmail?: string | null;
   orderType: OrderInputOrderType;
   /** @nullable */
-  deliveryAddress?: string | null;
+  address?: StructuredAddress | null;
   items: OrderLineInput[];
   /** @nullable */
   specialInstructions?: string | null;
   squarePaymentSourceId: string;
+  /** @nullable */
+  doordashExternalDeliveryId?: string | null;
 }

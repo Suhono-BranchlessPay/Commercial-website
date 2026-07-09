@@ -46,17 +46,33 @@ export const OrderInputOrderType = {
   delivery: 'delivery',
 } as const;
 
+export interface StructuredAddress {
+  street: string;
+  /** @nullable */
+  unit?: string | null;
+  city: string;
+  state: string;
+  postcode: string;
+  lat: number;
+  lng: number;
+}
+
 export interface OrderInput {
-  customerName: string;
+  firstName: string;
+  /** @nullable */
+  lastName?: string | null;
   customerPhone: string;
   /** @nullable */
   customerEmail?: string | null;
   orderType: OrderInputOrderType;
   /** @nullable */
-  deliveryAddress?: string | null;
+  address?: StructuredAddress | null;
   items: OrderLineInput[];
   /** @nullable */
   specialInstructions?: string | null;
+  squarePaymentSourceId: string;
+  /** @nullable */
+  doordashExternalDeliveryId?: string | null;
 }
 
 export interface OrderLine {
@@ -83,6 +99,9 @@ export const OrderStatus = {
 
 export interface Order {
   id: string;
+  firstName: string;
+  /** @nullable */
+  lastName?: string | null;
   customerName: string;
   customerPhone: string;
   /** @nullable */

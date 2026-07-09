@@ -2,8 +2,11 @@
  * Square POS Integration — prepaid web orders only.
  *
  * Flow: CreateOrder → Charge card (Web Payments token) → Accept kitchen (RESERVED).
- * Payment MUST succeed before kitchen auto-fire. No EXTERNAL / fake-paid payments.
+ * Payment MUST succeed before charge. No EXTERNAL / fake-paid payments.
  */
+
+import type { StructuredAddress } from "../lib/address";
+import { SQUARE_ORDER_SOURCE_NAME } from "../lib/tenant";
 
 export interface SquareOrderItem {
   menuItemId: string;
@@ -17,9 +20,12 @@ export interface SquareOrderItem {
 export interface SquareOrderInput {
   orderId: string;
   customerName: string;
+  firstName: string;
+  lastName?: string | null;
   customerPhone: string;
   orderType: "pickup" | "delivery";
   deliveryAddress?: string | null;
+  deliveryAddressStructured?: StructuredAddress | null;
   items: SquareOrderItem[];
   subtotal: number;
   tax: number;
@@ -290,6 +296,24 @@ export async function sendOrderToSquare(
   }
   const ticketName = input.customerName.slice(0, 30);
 
+  const squareDeliveryAddress = input.deliveryAddressStructured
+    ? {
+        address_line_1: [
+          input.deliveryAddressStructured.street,
+          input.deliveryAddressStructured.unit,
+        ]
+          .filter(Boolean)
+          .join(" "),
+        locality: input.deliveryAddressStructured.city,
+        administrative_district_level_1:
+          input.deliveryAddressStructured.state,
+        postal_code: input.deliveryAddressStructured.postcode,
+        country: "US",
+      }
+    : {
+        address_line_1: input.deliveryAddress ?? "",
+      };
+
   const fulfillmentBase =
     input.orderType === "pickup"
       ? {
@@ -314,9 +338,7 @@ export async function sendOrderToSquare(
               recipient: {
               display_name: input.customerName,
               phone_number: input.customerPhone,
-              address: {
-                address_line_1: input.deliveryAddress ?? "",
-              },
+              address: squareDeliveryAddress,
             },
             note: input.specialInstructions ?? "Samurai website delivery",
           },
@@ -333,7 +355,7 @@ export async function sendOrderToSquare(
           reference_id: input.orderId.slice(0, 40),
           state: "OPEN",
           ticket_name: ticketName,
-          source: { name: "Samurai Order Hub" },
+          source: { name: SQUARE_ORDER_SOURCE_NAME },
           line_items: lineItems,
           taxes: [
             {
@@ -344,7 +366,7 @@ export async function sendOrderToSquare(
           ],
           fulfillments: [{ ...fulfillmentBase, state: "PROPOSED" }],
           metadata: {
-            source: "samurai-website",
+            source: "orderly-website",
             payment_timing: "prepaid",
             ...(input.specialInstructions
               ? { special_instructions: input.specialInstructions }

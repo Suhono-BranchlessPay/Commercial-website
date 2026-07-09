@@ -23,6 +23,9 @@ export const menuItemsTable = pgTable("menu_items", {
 
 export const ordersTable = pgTable("orders", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull().default("default"),
+  customerId: text("customer_id"),
+  addressId: text("address_id"),
   customerName: text("customer_name").notNull(),
   customerPhone: text("customer_phone").notNull(),
   customerEmail: text("customer_email"),
@@ -42,15 +45,6 @@ export const ordersTable = pgTable("orders", {
   doordashStatus: text("doordash_status"),
   estimatedDropoffTime: text("estimated_dropoff_time"),
   specialInstructions: text("special_instructions"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
-export const customersTable = pgTable("customers", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  phone: text("phone").notNull().unique(),
-  email: text("email").notNull(),
-  city: text("city").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

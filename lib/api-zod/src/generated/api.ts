@@ -69,22 +69,37 @@ export const GetFeaturedItemsResponse = zod.array(GetFeaturedItemsResponseItem)
 /**
  * @summary Place a new order
  */
+export const StructuredAddress = zod.object({
+  "street": zod.string(),
+  "unit": zod.string().nullish(),
+  "city": zod.string(),
+  "state": zod.string(),
+  "postcode": zod.string(),
+  "lat": zod.number(),
+  "lng": zod.number(),
+})
+
 export const CreateOrderBody = zod.object({
-  "customerName": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string().nullish(),
   "customerPhone": zod.string(),
   "customerEmail": zod.string().nullish(),
   "orderType": zod.enum(['pickup', 'delivery']),
-  "deliveryAddress": zod.string().nullish(),
+  "address": StructuredAddress.nullish(),
   "items": zod.array(zod.object({
   "menuItemId": zod.string(),
   "quantity": zod.number(),
   "specialInstructions": zod.string().nullish()
 })),
-  "specialInstructions": zod.string().nullish()
+  "specialInstructions": zod.string().nullish(),
+  "squarePaymentSourceId": zod.string(),
+  "doordashExternalDeliveryId": zod.string().nullish(),
 })
 
 export const CreateOrderResponse = zod.object({
   "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string().nullish(),
   "customerName": zod.string(),
   "customerPhone": zod.string(),
   "customerEmail": zod.string().nullish(),

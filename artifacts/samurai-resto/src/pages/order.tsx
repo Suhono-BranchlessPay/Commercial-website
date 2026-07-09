@@ -14,20 +14,40 @@ import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, ArrowRight, CheckCircle2, ShoppingBag, Loader2, Pencil, MapPin, Phone, User, Package, CreditCard } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { SquareCardPayment, type SquareCardHandle } from "@/components/SquareCardPayment";
+import { AddressAutocomplete } from "@/components/AddressAutocomplete";
+import {
+  displayName,
+  formatAddressDisplay,
+  loadCheckoutProfile,
+  rememberOrderId,
+  saveCheckoutProfile,
+  type StructuredAddress,
+} from "@/lib/checkoutStorage";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+const addressSchema = z.object({
+  street: z.string().min(1),
+  unit: z.string().nullable().optional(),
+  city: z.string().min(1),
+  state: z.string().min(2).max(2),
+  postcode: z.string().min(5),
+  lat: z.number(),
+  lng: z.number(),
+});
+
 /* ── Schema ── */
 const detailsSchema = z.object({
-  customerName:         z.string().min(2, "Name must be at least 2 characters"),
+  firstName:            z.string().min(1, "First name is required"),
+  lastName:             z.string().optional(),
   customerPhone:        z.string().min(10, "Valid phone number required"),
   customerEmail:        z.string().email("Valid email required").optional().or(z.literal("")),
   orderType:            z.enum(["pickup", "delivery"]),
-  deliveryAddress:      z.string().optional(),
+  address:              addressSchema.nullable().optional(),
   specialInstructions:  z.string().optional(),
 }).superRefine((data, ctx) => {
-  if (data.orderType === "delivery" && (!data.deliveryAddress || data.deliveryAddress.length < 5)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Delivery address required", path: ["deliveryAddress"] });
+  if (data.orderType === "delivery" && !data.address) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Select a delivery address from the suggestions", path: ["address"] });
   }
 });
 
@@ -89,22 +109,50 @@ export default function Order() {
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [cardReady, setCardReady] = useState(false);
   const [checkoutEnabled, setCheckoutEnabled] = useState<boolean | null>(null);
+  const [tenantId, setTenantId] = useState("default");
+  const [addressUnit, setAddressUnit] = useState("");
   const cardRef = useRef<SquareCardHandle>(null);
+
+  const form = useForm<DetailsValues>({
+    resolver: zodResolver(detailsSchema),
+    defaultValues: {
+      firstName: "",
+      lastName: "",
+      customerPhone: "",
+      customerEmail: "",
+      orderType: "pickup",
+      address: null,
+      specialInstructions: "",
+    },
+  });
 
   useEffect(() => {
     fetch(`${API_BASE}/api/square/config`)
       .then((r) => r.json())
       .then((c: { enabled?: boolean }) => setCheckoutEnabled(Boolean(c.enabled)))
       .catch(() => setCheckoutEnabled(false));
-  }, []);
 
-  const form = useForm<DetailsValues>({
-    resolver: zodResolver(detailsSchema),
-    defaultValues: {
-      customerName: "", customerPhone: "", customerEmail: "",
-      orderType: "pickup", deliveryAddress: "", specialInstructions: "",
-    },
-  });
+    fetch(`${API_BASE}/api/config/checkout`)
+      .then((r) => r.json())
+      .then((c: { tenantId?: string }) => {
+        const tid = c.tenantId ?? "default";
+        setTenantId(tid);
+        const saved = loadCheckoutProfile(tid);
+        if (saved) {
+          form.reset({
+            firstName: saved.firstName,
+            lastName: saved.lastName ?? "",
+            customerPhone: saved.customerPhone,
+            customerEmail: saved.customerEmail ?? "",
+            orderType: "pickup",
+            address: saved.address ?? null,
+            specialInstructions: "",
+          });
+          setAddressUnit(saved.address?.unit ?? "");
+        }
+      })
+      .catch(() => {});
+  }, [form]);
 
   const values    = form.getValues();
   const orderType = form.watch("orderType");
@@ -144,9 +192,10 @@ export default function Order() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            customerName: data.customerName,
+            firstName: data.firstName,
+            lastName: data.lastName || null,
             customerPhone: data.customerPhone,
-            deliveryAddress: data.deliveryAddress,
+            address: data.address,
             items: items.map((item) => ({
               menuItemId: item.menuItem.id,
               quantity: item.quantity,
@@ -223,7 +272,12 @@ export default function Order() {
     }
 
     const orderInput = {
-      ...data,
+      firstName: data.firstName,
+      lastName: data.lastName || null,
+      customerPhone: data.customerPhone,
+      customerEmail: data.customerEmail || null,
+      orderType: data.orderType,
+      address: data.orderType === "delivery" ? data.address : null,
       squarePaymentSourceId,
       doordashExternalDeliveryId:
         data.orderType === "delivery" ? deliveryQuote?.externalDeliveryId : null,
@@ -232,9 +286,18 @@ export default function Order() {
         quantity: item.quantity,
         specialInstructions: item.specialInstructions || null,
       })),
+      specialInstructions: data.specialInstructions || null,
     };
     createOrder.mutate({ data: orderInput }, {
       onSuccess: (response) => {
+        saveCheckoutProfile(tenantId, {
+          firstName: data.firstName,
+          lastName: data.lastName || null,
+          customerPhone: data.customerPhone,
+          customerEmail: data.customerEmail || undefined,
+          address: data.orderType === "delivery" ? data.address ?? null : loadCheckoutProfile(tenantId)?.address ?? null,
+        });
+        rememberOrderId(response.id);
         setSuccessOrderId(response.id);
         setSuccessTotal(response.total);
         setSuccessTrackingUrl(
@@ -281,10 +344,10 @@ export default function Order() {
               <Phone className="h-4 w-4" />
               <span>{values.customerPhone}</span>
             </div>
-            {values.orderType === "delivery" && values.deliveryAddress && (
+            {values.orderType === "delivery" && values.address && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <MapPin className="h-4 w-4" />
-                <span>{values.deliveryAddress}</span>
+                <span>{formatAddressDisplay(values.address)}</span>
               </div>
             )}
           </div>
@@ -437,21 +500,28 @@ export default function Order() {
               <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
                 <h2 className="font-serif text-xl text-foreground mb-2">Your Info</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <FormField control={form.control} name="customerName" render={({ field }) => (
+                  <FormField control={form.control} name="firstName" render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-foreground flex items-center gap-2"><User className="h-3.5 w-3.5" /> Full Name *</FormLabel>
-                      <FormControl><Input placeholder="John Doe" {...field} className="h-12 bg-background" /></FormControl>
+                      <FormLabel className="text-foreground flex items-center gap-2"><User className="h-3.5 w-3.5" /> First Name *</FormLabel>
+                      <FormControl><Input placeholder="Sri" {...field} className="h-12 bg-background" /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
-                  <FormField control={form.control} name="customerPhone" render={({ field }) => (
+                  <FormField control={form.control} name="lastName" render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-foreground flex items-center gap-2"><Phone className="h-3.5 w-3.5" /> Phone *</FormLabel>
-                      <FormControl><Input placeholder="(765) 555-1234" {...field} className="h-12 bg-background" /></FormControl>
+                      <FormLabel className="text-foreground">Last Name</FormLabel>
+                      <FormControl><Input placeholder="Optional" {...field} className="h-12 bg-background" /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
                 </div>
+                <FormField control={form.control} name="customerPhone" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-foreground flex items-center gap-2"><Phone className="h-3.5 w-3.5" /> Phone *</FormLabel>
+                    <FormControl><Input placeholder="(765) 555-1234" {...field} className="h-12 bg-background" /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
                 <FormField control={form.control} name="customerEmail" render={({ field }) => (
                   <FormItem>
                     <FormLabel className="text-foreground">Email (Optional)</FormLabel>
@@ -461,11 +531,17 @@ export default function Order() {
                 )} />
 
                 {orderType === "delivery" && (
-                  <FormField control={form.control} name="deliveryAddress" render={({ field }) => (
+                  <FormField control={form.control} name="address" render={({ field }) => (
                     <FormItem className="animate-in fade-in slide-in-from-top-2 duration-300">
                       <FormLabel className="text-foreground flex items-center gap-2"><MapPin className="h-3.5 w-3.5" /> Delivery Address *</FormLabel>
                       <FormControl>
-                        <Textarea placeholder="123 Main St, Martinsville, IN 46151" {...field} className="resize-none h-20 bg-background" />
+                        <AddressAutocomplete
+                          apiBase={API_BASE}
+                          value={(field.value as StructuredAddress | null) ?? null}
+                          unit={addressUnit}
+                          onAddressChange={field.onChange}
+                          onUnitChange={setAddressUnit}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -545,14 +621,14 @@ export default function Order() {
                   {values.orderType === "pickup" && <span className="text-muted-foreground">· 789 E Morgan St, Martinsville</span>}
                 </div>
                 <div className="flex items-center gap-3 text-muted-foreground">
-                  <User className="h-4 w-4" /><span>{values.customerName}</span>
+                  <User className="h-4 w-4" /><span>{displayName(values.firstName, values.lastName)}</span>
                 </div>
                 <div className="flex items-center gap-3 text-muted-foreground">
                   <Phone className="h-4 w-4" /><span>{values.customerPhone}</span>
                 </div>
-                {values.deliveryAddress && (
+                {values.address && (
                   <div className="flex items-center gap-3 text-muted-foreground">
-                    <MapPin className="h-4 w-4" /><span>{values.deliveryAddress}</span>
+                    <MapPin className="h-4 w-4" /><span>{formatAddressDisplay(values.address)}</span>
                   </div>
                 )}
                 {values.specialInstructions && (

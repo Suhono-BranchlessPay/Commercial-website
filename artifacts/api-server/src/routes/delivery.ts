@@ -7,13 +7,19 @@ import {
   createDeliveryQuote,
   isDoordashConfigured,
 } from "../integrations/doordash";
+import {
+  isWithinDeliveryRadius,
+  OUT_OF_RADIUS_MESSAGE,
+  structuredAddressSchema,
+} from "../lib/address";
 
 const router = Router();
 
 const quoteInputSchema = z.object({
-  customerName: z.string().min(1),
+  firstName: z.string().min(1),
+  lastName: z.string().nullable().optional(),
   customerPhone: z.string().min(10),
-  deliveryAddress: z.string().min(5),
+  address: structuredAddressSchema,
   items: z
     .array(
       z.object({
@@ -27,7 +33,8 @@ const quoteInputSchema = z.object({
 router.post("/delivery/quote", async (req, res): Promise<void> => {
   if (!isDoordashConfigured()) {
     res.status(503).json({
-      error: "Delivery is not available right now. Please try pickup or call the restaurant.",
+      error:
+        "Delivery is not available right now. Please try pickup or call the restaurant.",
     });
     return;
   }
@@ -39,6 +46,12 @@ router.post("/delivery/quote", async (req, res): Promise<void> => {
   }
 
   const input = parsed.data;
+
+  if (!isWithinDeliveryRadius(input.address.lat, input.address.lng)) {
+    res.status(400).json({ error: OUT_OF_RADIUS_MESSAGE });
+    return;
+  }
+
   const TAX_RATE = 0.07;
   let subtotal = 0;
 
@@ -56,14 +69,16 @@ router.post("/delivery/quote", async (req, res): Promise<void> => {
 
   try {
     const quote = await createDeliveryQuote({
-      customerName: input.customerName,
+      firstName: input.firstName,
+      lastName: input.lastName,
       customerPhone: input.customerPhone,
-      deliveryAddress: input.deliveryAddress,
+      address: input.address,
       orderValueCents,
     });
 
     res.json({
       ...quote,
+      addressKey: addressFingerprint(input.address),
       foodSubtotal: subtotal,
       foodTax: tax,
       foodTotal: subtotal + tax,

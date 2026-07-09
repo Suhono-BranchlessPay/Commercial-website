@@ -210,11 +210,38 @@ components:
         - menuItemId
         - quantity
 
+    StructuredAddress:
+      type: object
+      properties:
+        street:
+          type: string
+        unit:
+          type: ["string", "null"]
+        city:
+          type: string
+        state:
+          type: string
+        postcode:
+          type: string
+        lat:
+          type: number
+        lng:
+          type: number
+      required:
+        - street
+        - city
+        - state
+        - postcode
+        - lat
+        - lng
+
     OrderInput:
       type: object
       properties:
-        customerName:
+        firstName:
           type: string
+        lastName:
+          type: ["string", "null"]
         customerPhone:
           type: string
         customerEmail:
@@ -222,8 +249,10 @@ components:
         orderType:
           type: string
           enum: [pickup, delivery]
-        deliveryAddress:
-          type: ["string", "null"]
+        address:
+          oneOf:
+            - $ref: "#/components/schemas/StructuredAddress"
+            - type: "null"
         items:
           type: array
           items:
@@ -237,8 +266,10 @@ components:
         squarePaymentSourceId:
           type: string
           description: Card nonce from Square Web Payments SDK (required)
+        doordashExternalDeliveryId:
+          type: ["string", "null"]
       required:
-        - customerName
+        - firstName
         - customerPhone
         - orderType
         - items
@@ -271,6 +302,10 @@ components:
       properties:
         id:
           type: string
+        firstName:
+          type: string
+        lastName:
+          type: ["string", "null"]
         customerName:
           type: string
         customerPhone:
@@ -310,6 +345,7 @@ components:
           type: string
       required:
         - id
+        - firstName
         - customerName
         - customerPhone
         - orderType

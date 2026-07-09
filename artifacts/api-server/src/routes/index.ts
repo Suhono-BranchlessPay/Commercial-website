@@ -6,6 +6,7 @@ import customersRouter from "./customers";
 import settingsRouter from "./settings";
 import versionRouter from "./version";
 import squareRouter from "./square";
+import configRouter from "./config";
 import deliveryRouter from "./delivery";
 import webhooksRouter from "./webhooks";
 
@@ -18,6 +19,7 @@ router.use(customersRouter);
 router.use(settingsRouter);
 router.use(versionRouter);
 router.use(squareRouter);
+router.use(configRouter);
 router.use(deliveryRouter);
 router.use(webhooksRouter);
 

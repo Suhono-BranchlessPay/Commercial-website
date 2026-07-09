@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { ordersTable, orderLinesTable, menuItemsTable } from "@workspace/db";
+import {
+  ordersTable,
+  orderLinesTable,
+  menuItemsTable,
+} from "@workspace/db";
 import { eq, gte, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { z } from "zod";
@@ -25,6 +29,15 @@ import {
   isOwnerConfigured,
   syncOrderToOwner,
 } from "../integrations/owner";
+import { upsertCustomerAndAddress } from "../lib/customers";
+import {
+  addressFingerprint,
+  isWithinDeliveryRadius,
+  OUT_OF_RADIUS_MESSAGE,
+  structuredAddressSchema,
+} from "../lib/address";
+import { displayName } from "../lib/phone";
+import { getTenantId } from "../lib/tenant";
 
 const router = Router();
 
@@ -35,11 +48,12 @@ const orderLineInputSchema = z.object({
 });
 
 const orderInputSchema = z.object({
-  customerName: z.string().min(1),
-  customerPhone: z.string().min(1),
-  customerEmail: z.string().nullable().optional(),
+  firstName: z.string().min(1),
+  lastName: z.string().nullable().optional(),
+  customerPhone: z.string().min(10),
+  customerEmail: z.string().email().nullable().optional().or(z.literal("")),
   orderType: z.enum(["pickup", "delivery"]),
-  deliveryAddress: z.string().nullable().optional(),
+  address: structuredAddressSchema.nullable().optional(),
   items: z.array(orderLineInputSchema).min(1),
   specialInstructions: z.string().nullable().optional(),
   squarePaymentSourceId: z.string().min(1, "Card payment token is required"),
@@ -54,8 +68,21 @@ router.post("/orders", async (req, res): Promise<void> => {
   }
 
   const input = parsed.data;
+  const tenantId = getTenantId();
+  const customerDisplayName = displayName(input.firstName, input.lastName);
 
   try {
+    if (input.orderType === "delivery") {
+      if (!input.address) {
+        res.status(400).json({ error: "Delivery address is required" });
+        return;
+      }
+      if (!isWithinDeliveryRadius(input.address.lat, input.address.lng)) {
+        res.status(400).json({ error: OUT_OF_RADIUS_MESSAGE });
+        return;
+      }
+    }
+
     const menuItemIds = input.items.map((i) => i.menuItemId);
     const menuItemMap: Record<
       string,
@@ -96,11 +123,15 @@ router.post("/orders", async (req, res): Promise<void> => {
     const orderId = randomUUID();
 
     let deliveryFee = 0;
+    let deliveryAddressFormatted: string | null = null;
+
     if (input.orderType === "delivery") {
-      if (!input.deliveryAddress || input.deliveryAddress.length < 5) {
-        res.status(400).json({ error: "Delivery address is required" });
-        return;
-      }
+      const addr = input.address!;
+      deliveryAddressFormatted = [
+        [addr.street, addr.unit].filter(Boolean).join(" "),
+        `${addr.city}, ${addr.state} ${addr.postcode}`,
+      ].join(", ");
+
       if (!isDoordashConfigured()) {
         res.status(503).json({
           error: "Delivery is not available right now. Please choose pickup.",
@@ -120,23 +151,30 @@ router.post("/orders", async (req, res): Promise<void> => {
         });
         return;
       }
-      if (quote.deliveryAddress.trim() !== input.deliveryAddress.trim()) {
+      if (quote.addressKey !== addressFingerprint(addr)) {
         res.status(400).json({ error: "Delivery address does not match quote." });
         return;
       }
       deliveryFee = quote.deliveryFeeCents / 100;
     }
 
-    const total =
-      Math.round((subtotal + tax + deliveryFee) * 100) / 100;
+    const total = Math.round((subtotal + tax + deliveryFee) * 100) / 100;
 
-    // BP Audit Shield — fraud check sebelum order disimpan
+    const customerRecord = await upsertCustomerAndAddress({
+      tenantId,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      phone: input.customerPhone,
+      email: input.customerEmail,
+      address: input.orderType === "delivery" ? input.address! : null,
+    });
+
     if (isBranchlesspayConfigured()) {
       try {
         const auditResult = await auditOrderWithBpShield({
           orderId,
-          customerName: input.customerName,
-          customerPhone: input.customerPhone,
+          customerName: customerDisplayName,
+          customerPhone: customerRecord.phoneE164,
           orderType: input.orderType,
           total,
           items: lines.map((l) => ({
@@ -154,9 +192,15 @@ router.post("/orders", async (req, res): Promise<void> => {
           });
           return;
         }
-        req.log.info({ auditId: auditResult.auditId, riskScore: auditResult.riskScore }, "BP Audit Shield approved");
+        req.log.info(
+          { auditId: auditResult.auditId, riskScore: auditResult.riskScore },
+          "BP Audit Shield approved",
+        );
       } catch (err) {
-        req.log.error({ err }, "BP Audit Shield check failed — continuing without audit");
+        req.log.error(
+          { err },
+          "BP Audit Shield check failed — continuing without audit",
+        );
       }
     }
 
@@ -171,14 +215,19 @@ router.post("/orders", async (req, res): Promise<void> => {
       return;
     }
 
-    let squareResult: Awaited<ReturnType<typeof sendOrderToSquare>> | null = null;
+    let squareResult: Awaited<ReturnType<typeof sendOrderToSquare>> | null =
+      null;
     try {
       squareResult = await sendOrderToSquare({
         orderId,
-        customerName: input.customerName,
-        customerPhone: input.customerPhone,
+        customerName: customerDisplayName,
+        firstName: input.firstName,
+        lastName: input.lastName,
+        customerPhone: customerRecord.phoneE164,
         orderType: input.orderType,
-        deliveryAddress: input.deliveryAddress,
+        deliveryAddress: deliveryAddressFormatted,
+        deliveryAddressStructured:
+          input.orderType === "delivery" ? input.address! : null,
         items: lines.map((l) => ({
           menuItemId: l.menuItemId,
           menuItemName: l.menuItemName,
@@ -211,14 +260,16 @@ router.post("/orders", async (req, res): Promise<void> => {
       return;
     }
 
-    // Simpan order ke database hanya setelah charge kartu + kitchen fire sukses
     await db.insert(ordersTable).values({
       id: orderId,
-      customerName: input.customerName,
-      customerPhone: input.customerPhone,
-      customerEmail: input.customerEmail ?? null,
+      tenantId,
+      customerId: customerRecord.customerId,
+      addressId: customerRecord.addressId,
+      customerName: customerDisplayName,
+      customerPhone: customerRecord.phoneE164,
+      customerEmail: customerRecord.email,
       orderType: input.orderType,
-      deliveryAddress: input.deliveryAddress ?? null,
+      deliveryAddress: deliveryAddressFormatted,
       subtotal,
       tax,
       total,
@@ -251,9 +302,10 @@ router.post("/orders", async (req, res): Promise<void> => {
       try {
         const ddResult = await acceptDeliveryQuote({
           externalDeliveryId: input.doordashExternalDeliveryId,
-          customerName: input.customerName,
-          customerPhone: input.customerPhone,
-          deliveryAddress: input.deliveryAddress!,
+          firstName: input.firstName,
+          lastName: input.lastName,
+          customerPhone: customerRecord.phoneE164,
+          address: input.address!,
           orderValueCents: Math.round((subtotal + tax) * 100),
           items: lines.map((l) => ({
             name: l.menuItemName,
@@ -282,7 +334,10 @@ router.post("/orders", async (req, res): Promise<void> => {
           "DoorDash delivery dispatched after payment",
         );
       } catch (err) {
-        req.log.error({ err, orderId }, "DoorDash dispatch failed after payment — issuing refund");
+        req.log.error(
+          { err, orderId },
+          "DoorDash dispatch failed after payment — issuing refund",
+        );
         try {
           await refundSquarePayment(
             squareResult.squarePaymentId,
@@ -307,16 +362,15 @@ router.post("/orders", async (req, res): Promise<void> => {
       }
     }
 
-    // Owner.com — sync order untuk loyalty dan marketing
     if (isOwnerConfigured()) {
       try {
         const ownerResult = await syncOrderToOwner({
           orderId,
-          customerName: input.customerName,
-          customerPhone: input.customerPhone,
-          customerEmail: input.customerEmail,
+          customerName: customerDisplayName,
+          customerPhone: customerRecord.phoneE164,
+          customerEmail: customerRecord.email,
           orderType: input.orderType,
-          deliveryAddress: input.deliveryAddress,
+          deliveryAddress: deliveryAddressFormatted,
           items: lines.map((l) => ({
             name: l.menuItemName,
             quantity: l.quantity,
@@ -327,7 +381,13 @@ router.post("/orders", async (req, res): Promise<void> => {
           total,
           specialInstructions: input.specialInstructions,
         });
-        req.log.info({ ownerOrderId: ownerResult.ownerOrderId, loyaltyPoints: ownerResult.loyaltyPointsEarned }, "Order synced to Owner.com");
+        req.log.info(
+          {
+            ownerOrderId: ownerResult.ownerOrderId,
+            loyaltyPoints: ownerResult.loyaltyPointsEarned,
+          },
+          "Order synced to Owner.com",
+        );
       } catch (err) {
         req.log.error({ err }, "Failed to sync order to Owner.com");
       }
@@ -344,6 +404,8 @@ router.post("/orders", async (req, res): Promise<void> => {
 
     res.status(201).json({
       ...order[0],
+      firstName: input.firstName,
+      lastName: input.lastName ?? null,
       items: orderLines,
       doordashTrackingUrl,
       estimatedDropoffTime,
@@ -381,43 +443,48 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
   }
 });
 
-/* ══ Customer Account — lookup by phone ══ */
-router.get("/account/orders", async (req, res): Promise<void> => {
-  const phone = (req.query.phone as string || "").trim().replace(/\D/g, "");
-  if (phone.length < 7) {
-    res.status(400).json({ error: "Invalid phone number" });
+/** Device-local order history only — pass order IDs saved on this device. */
+router.post("/account/orders", async (req, res): Promise<void> => {
+  const schema = z.object({
+    orderIds: z.array(z.string().uuid()).max(20),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid request" });
     return;
   }
-  try {
-    const orders = await db
-      .select()
-      .from(ordersTable)
-      .where(eq(ordersTable.customerPhone, req.query.phone as string))
-      .orderBy(desc(ordersTable.createdAt))
-      .limit(20);
 
+  try {
     const ordersWithLines = await Promise.all(
-      orders.map(async (order) => {
+      parsed.data.orderIds.map(async (id) => {
+        const rows = await db
+          .select()
+          .from(ordersTable)
+          .where(eq(ordersTable.id, id))
+          .limit(1);
+        const order = rows[0];
+        if (!order) return null;
         const lines = await db
           .select()
           .from(orderLinesTable)
-          .where(eq(orderLinesTable.orderId, order.id));
+          .where(eq(orderLinesTable.orderId, id));
         return {
           ...order,
           createdAt: order.createdAt?.toISOString(),
           lines,
         };
-      })
+      }),
     );
 
-    res.json({ orders: ordersWithLines, customerName: orders[0]?.customerName ?? null });
+    res.json({
+      orders: ordersWithLines.filter(Boolean),
+    });
   } catch (err) {
     req.log.error({ err }, "Account orders failed");
     res.status(500).json({ error: "Failed to load orders" });
   }
 });
 
-/* ══ Owner Dashboard Endpoints ══ */
 router.get("/owner/stats", async (req, res): Promise<void> => {
   if (!(await checkPin(req.query.pin))) {
     res.status(401).json({ error: "Invalid PIN" });
@@ -440,14 +507,21 @@ router.get("/owner/stats", async (req, res): Promise<void> => {
       .limit(20);
 
     const todaySales = todayOrders.reduce((sum, o) => sum + o.total, 0);
-    const avgTicket  = todayOrders.length > 0 ? todaySales / todayOrders.length : 0;
+    const avgTicket =
+      todayOrders.length > 0 ? todaySales / todayOrders.length : 0;
 
     res.json({
       todayCount: todayOrders.length,
       todaySales,
       avgTicket,
-      todayOrders:  todayOrders.map(o => ({ ...o, createdAt: o.createdAt?.toISOString() })),
-      recentOrders: recentOrders.map(o => ({ ...o, createdAt: o.createdAt?.toISOString() })),
+      todayOrders: todayOrders.map((o) => ({
+        ...o,
+        createdAt: o.createdAt?.toISOString(),
+      })),
+      recentOrders: recentOrders.map((o) => ({
+        ...o,
+        createdAt: o.createdAt?.toISOString(),
+      })),
     });
   } catch (err) {
     req.log.error({ err }, "Owner stats failed");
@@ -494,7 +568,10 @@ router.patch("/owner/orders/:id/status", async (req, res): Promise<void> => {
       return;
     }
 
-    await db.update(ordersTable).set({ status }).where(eq(ordersTable.id, req.params.id));
+    await db
+      .update(ordersTable)
+      .set({ status })
+      .where(eq(ordersTable.id, req.params.id));
 
     if (
       order.squareOrderId &&
@@ -506,7 +583,10 @@ router.patch("/owner/orders/:id/status", async (req, res): Promise<void> => {
           status as "ready" | "completed" | "cancelled",
         );
       } catch (err) {
-        req.log.error({ err, squareOrderId: order.squareOrderId }, "Square status sync failed");
+        req.log.error(
+          { err, squareOrderId: order.squareOrderId },
+          "Square status sync failed",
+        );
       }
     }
 

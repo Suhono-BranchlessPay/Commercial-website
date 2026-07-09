@@ -19,17 +19,31 @@ git clone --depth 1 "$REPO" "$TMP"
     for f in \
       "artifacts/api-server/src/integrations/square.ts" \
       "artifacts/api-server/src/integrations/doordash.ts" \
+      "artifacts/api-server/src/lib/tenant.ts" \
+      "artifacts/api-server/src/lib/phone.ts" \
+      "artifacts/api-server/src/lib/address.ts" \
+      "artifacts/api-server/src/lib/customers.ts" \
       "artifacts/api-server/src/routes/orders.ts" \
       "artifacts/api-server/src/routes/square.ts" \
       "artifacts/api-server/src/routes/delivery.ts" \
+      "artifacts/api-server/src/routes/config.ts" \
+      "artifacts/api-server/src/routes/customers.ts" \
       "artifacts/api-server/src/routes/webhooks.ts" \
       "artifacts/api-server/src/routes/index.ts" \
-  "lib/db/src/schema/menu.ts" \
-  "artifacts/samurai-resto/src/pages/order.tsx" \
-  "artifacts/samurai-resto/src/components/SquareCardPayment.tsx" \
-  "artifacts/samurai-resto/src/pages/owner.tsx" \
-  "lib/api-zod/src/generated/types/orderInput.ts" \
-  "lib/api-zod/src/generated/types/order.ts"
+      "lib/db/src/schema/menu.ts" \
+      "lib/db/src/schema/customers.ts" \
+      "lib/db/src/schema/index.ts" \
+      "artifacts/samurai-resto/src/pages/order.tsx" \
+      "artifacts/samurai-resto/src/pages/account.tsx" \
+      "artifacts/samurai-resto/src/lib/checkoutStorage.ts" \
+      "artifacts/samurai-resto/src/components/AddressAutocomplete.tsx" \
+      "artifacts/samurai-resto/src/components/SquareCardPayment.tsx" \
+      "artifacts/samurai-resto/src/pages/owner.tsx" \
+      "lib/api-zod/src/generated/types/orderInput.ts" \
+      "lib/api-zod/src/generated/types/order.ts" \
+      "lib/api-zod/src/generated/types/structuredAddress.ts" \
+      "lib/api-client-react/src/generated/api.schemas.ts" \
+      "scripts/migrate-customer-foundation.sql"
 do
   mkdir -p "$(dirname "$ROOT/$f")"
   cp "$TMP/$f" "$ROOT/$f"
@@ -52,6 +66,7 @@ if [ -n "$DBURL" ]; then
   psql "$DBURL" -c "ALTER TABLE orders ADD COLUMN IF NOT EXISTS doordash_tracking_url text;" || true
   psql "$DBURL" -c "ALTER TABLE orders ADD COLUMN IF NOT EXISTS doordash_status text;" || true
   psql "$DBURL" -c "ALTER TABLE orders ADD COLUMN IF NOT EXISTS estimated_dropoff_time text;" || true
+  psql "$DBURL" -f "$TMP/scripts/migrate-customer-foundation.sql" || true
 fi
 
 echo "==> Build API"

@@ -1,35 +1,22 @@
-import { useState } from "react";
-import { Link, useLocation } from "wouter";
+import { useState, useEffect } from "react";
+import { Link } from "wouter";
 import { useCart } from "@/lib/cart";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Phone, RefreshCw, ShoppingBag, Clock, CheckCircle2, RotateCcw,
-  ChevronDown, ChevronUp, MapPin, Package, Mail, User, Building2,
-  UserPlus, ArrowLeft,
+  RefreshCw, ShoppingBag, Clock, CheckCircle2, RotateCcw,
+  ChevronDown, ChevronUp, MapPin, Package, Mail, User,
+  UserPlus, ArrowLeft, Phone,
 } from "lucide-react";
 import type { MenuItem } from "@workspace/api-client-react";
+import {
+  displayName,
+  loadCheckoutProfile,
+  loadOrderIds,
+  type CheckoutProfile,
+} from "@/lib/checkoutStorage";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-
-interface Customer {
-  id: string;
-  name: string;
-  phone: string;
-  email: string;
-  city: string;
-  createdAt: string;
-}
-
-interface OrderLine {
-  id: string;
-  menuItemId: string;
-  menuItemName: string;
-  quantity: number;
-  unitPrice: number;
-  subtotal: number;
-  specialInstructions: string | null;
-}
 
 interface PastOrder {
   id: string;
@@ -41,7 +28,15 @@ interface PastOrder {
   status: string;
   createdAt: string;
   deliveryAddress: string | null;
-  lines: OrderLine[];
+  lines: Array<{
+    id: string;
+    menuItemId: string;
+    menuItemName: string;
+    quantity: number;
+    unitPrice: number;
+    subtotal: number;
+    specialInstructions: string | null;
+  }>;
 }
 
 const STATUS_STYLES: Record<string, { label: string; dot: string }> = {
@@ -59,7 +54,6 @@ function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
 }
 
-/* ── Input field component ── */
 function Field({ label, icon: Icon, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; icon: React.ElementType }) {
   return (
     <div>
@@ -75,7 +69,6 @@ function Field({ label, icon: Icon, ...props }: React.InputHTMLAttributes<HTMLIn
   );
 }
 
-/* ── Order card ── */
 function OrderCard({ order, onReorder }: { order: PastOrder; onReorder: (o: PastOrder) => void }) {
   const [expanded, setExpanded] = useState(false);
   const style  = STATUS_STYLES[order.status] ?? STATUS_STYLES.pending;
@@ -146,70 +139,81 @@ function OrderCard({ order, onReorder }: { order: PastOrder; onReorder: (o: Past
   );
 }
 
-/* ══════════════════ Main Page ══════════════════ */
-type Step = "phone" | "register" | "dashboard";
+type Step = "dashboard" | "register";
 
 export default function Account() {
   const { addItem, setIsCartOpen } = useCart();
   const { toast } = useToast();
 
-  /* Step state */
-  const [step, setStep]               = useState<Step>("phone");
-  const [phone, setPhone]             = useState("");
-  const [customer, setCustomer]       = useState<Customer | null>(null);
-  const [orders, setOrders]           = useState<PastOrder[]>([]);
-  const [loading, setLoading]         = useState(false);
-  const [error, setError]             = useState("");
+  const [step, setStep] = useState<Step>("dashboard");
+  const [tenantId, setTenantId] = useState("default");
+  const [profile, setProfile] = useState<CheckoutProfile | null>(null);
+  const [orders, setOrders] = useState<PastOrder[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  /* Registration form */
-  const [regName,  setRegName]   = useState("");
-  const [regEmail, setRegEmail]  = useState("");
-  const [regCity,  setRegCity]   = useState("");
+  const [regFirstName, setRegFirstName] = useState("");
+  const [regLastName, setRegLastName] = useState("");
+  const [regPhone, setRegPhone] = useState("");
+  const [regEmail, setRegEmail] = useState("");
   const [regLoading, setRegLoading] = useState(false);
-  const [regError,   setRegError]  = useState("");
+  const [regError, setRegError] = useState("");
 
-  /* ── Step 1: Phone lookup ── */
-  const handleLookup = async () => {
-    const raw = phone.trim();
-    if (raw.replace(/\D/g, "").length < 7) { setError("Please enter a valid phone number."); return; }
-    setLoading(true); setError("");
-    try {
-      const res  = await fetch(`${API_BASE}/api/customers?phone=${encodeURIComponent(raw)}`);
-      const data = await res.json();
-      if (!res.ok) { setError("Something went wrong. Try again."); return; }
-      setOrders(data.orders ?? []);
-      if (data.customer) {
-        setCustomer(data.customer);
-        setStep("dashboard");
-      } else {
-        /* Not registered yet — pre-fill name from order history if available */
-        if (data.orders?.[0]?.customerName) setRegName(data.orders[0].customerName);
-        setStep("register");
+  useEffect(() => {
+    (async () => {
+      try {
+        const configRes = await fetch(`${API_BASE}/api/config/checkout`);
+        const config = await configRes.json() as { tenantId?: string };
+        const tid = config.tenantId ?? "default";
+        setTenantId(tid);
+        const saved = loadCheckoutProfile(tid);
+        setProfile(saved);
+        if (saved) {
+          setRegFirstName(saved.firstName);
+          setRegLastName(saved.lastName ?? "");
+          setRegPhone(saved.customerPhone);
+          setRegEmail(saved.customerEmail ?? "");
+        }
+
+        const orderIds = loadOrderIds();
+        if (orderIds.length > 0) {
+          const res = await fetch(`${API_BASE}/api/account/orders`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ orderIds }),
+          });
+          const data = await res.json() as { orders?: PastOrder[] };
+          setOrders(data.orders ?? []);
+        }
+      } finally {
+        setLoading(false);
       }
-    } catch {
-      setError("Cannot connect to server.");
-    } finally {
-      setLoading(false);
-    }
-  };
+    })();
+  }, []);
 
-  /* ── Step 2: Registration ── */
   const handleRegister = async () => {
-    if (!regName.trim())  { setRegError("Please enter your name."); return; }
-    if (!/\S+@\S+\.\S+/.test(regEmail)) { setRegError("Please enter a valid email."); return; }
-    if (!regCity.trim())  { setRegError("Please enter your city."); return; }
-    setRegLoading(true); setRegError("");
+    if (!regFirstName.trim()) { setRegError("First name is required."); return; }
+    if (regEmail && !/\S+@\S+\.\S+/.test(regEmail)) { setRegError("Please enter a valid email."); return; }
+    if (regPhone.replace(/\D/g, "").length < 7) { setRegError("Valid phone required."); return; }
+
+    setRegLoading(true);
+    setRegError("");
     try {
-      const res  = await fetch(`${API_BASE}/api/customers`, {
+      const res = await fetch(`${API_BASE}/api/customers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: regName.trim(), phone: phone.trim(), email: regEmail.trim(), city: regCity.trim() }),
+        body: JSON.stringify({
+          firstName: regFirstName.trim(),
+          lastName: regLastName.trim() || null,
+          phone: regPhone.trim(),
+          email: regEmail.trim() || null,
+        }),
       });
       const data = await res.json();
-      if (res.status === 409) { setCustomer(data.customer); setStep("dashboard"); return; }
-      if (!res.ok) { setRegError(data.error ?? "Registration failed."); return; }
-      setCustomer(data.customer);
-      toast({ title: "Welcome! 🎉", description: "Your account has been created." });
+      if (!res.ok && res.status !== 409) {
+        setRegError(data.error ?? "Registration failed.");
+        return;
+      }
+      toast({ title: "You're on the list! 🎉", description: "We'll send promos to your email when available." });
       setStep("dashboard");
     } catch {
       setRegError("Cannot connect to server.");
@@ -218,7 +222,6 @@ export default function Account() {
     }
   };
 
-  /* ── Reorder ── */
   const handleReorder = (order: PastOrder) => {
     for (const line of order.lines) {
       const mockItem: MenuItem = {
@@ -232,122 +235,86 @@ export default function Account() {
     setIsCartOpen(true);
   };
 
-  /* ═══════ RENDER ═══════ */
-
-  /* ── Phone lookup screen ── */
-  if (step === "phone") return (
-    <div className="bg-background min-h-screen py-12">
-      <div className="container mx-auto px-4 max-w-md">
-        <div className="text-center mb-10">
-          <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <ShoppingBag className="h-7 w-7 text-primary" />
-          </div>
-          <h1 className="font-serif text-4xl text-foreground mb-2">My Account</h1>
-          <p className="text-muted-foreground text-sm max-w-xs mx-auto">
-            Enter your phone number to access your account and order history.
-          </p>
-        </div>
-
-        <div className="bg-card border border-border rounded-2xl p-6 mb-6">
-          <Field
-            label="Phone Number"
-            icon={Phone}
-            type="tel"
-            value={phone}
-            onChange={e => { setPhone(e.target.value); setError(""); }}
-            onKeyDown={(e: React.KeyboardEvent) => e.key === "Enter" && handleLookup()}
-            placeholder="(765) 315-0073"
-          />
-          {error && <p className="text-destructive text-sm mt-2">{error}</p>}
-          <Button
-            onClick={handleLookup}
-            disabled={loading || phone.trim().replace(/\D/g, "").length < 7}
-            className="w-full h-12 mt-4 bg-primary hover:bg-primary/90 text-white font-semibold"
-          >
-            {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : "Continue"}
-          </Button>
-        </div>
-
-        <p className="text-center text-sm text-muted-foreground">
-          First time ordering?{" "}
-          <Link href="/menu" className="text-primary hover:underline font-semibold">Browse our menu →</Link>
-        </p>
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <RefreshCw className="h-8 w-8 animate-spin text-primary" />
       </div>
-    </div>
-  );
+    );
+  }
 
-  /* ── Registration screen ── */
-  if (step === "register") return (
-    <div className="bg-background min-h-screen py-12">
-      <div className="container mx-auto px-4 max-w-md">
-        <button onClick={() => setStep("phone")} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-8 transition-colors">
-          <ArrowLeft className="h-4 w-4" /> Back
-        </button>
+  if (step === "register") {
+    return (
+      <div className="bg-background min-h-screen py-12">
+        <div className="container mx-auto px-4 max-w-md">
+          <button onClick={() => setStep("dashboard")} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-8 transition-colors">
+            <ArrowLeft className="h-4 w-4" /> Back
+          </button>
 
-        <div className="text-center mb-8">
-          <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <UserPlus className="h-7 w-7 text-primary" />
+          <div className="text-center mb-8">
+            <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <UserPlus className="h-7 w-7 text-primary" />
+            </div>
+            <h1 className="font-serif text-3xl text-foreground mb-2">Join Our List</h1>
+            <p className="text-muted-foreground text-sm">
+              Get exclusive promos. Your checkout details stay private on this device.
+            </p>
           </div>
-          <h1 className="font-serif text-3xl text-foreground mb-2">Create Account</h1>
-          <p className="text-muted-foreground text-sm">
-            We didn't find an account for <span className="text-foreground font-semibold">{phone}</span>.<br />
-            Register to track orders and get exclusive promos!
-          </p>
-        </div>
 
-        <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
-          <Field label="Full Name" icon={User} type="text" value={regName}
-            onChange={e => setRegName(e.target.value)} placeholder="John Doe" />
-          <Field label="Phone Number" icon={Phone} type="tel" value={phone}
-            readOnly className="opacity-60 cursor-not-allowed" onChange={() => {}} />
-          <Field label="Email Address" icon={Mail} type="email" value={regEmail}
-            onChange={e => setRegEmail(e.target.value)} placeholder="john@email.com" />
-          <Field label="City" icon={Building2} type="text" value={regCity}
-            onChange={e => setRegCity(e.target.value)} placeholder="Martinsville" />
+          <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="First Name *" icon={User} type="text" value={regFirstName}
+                onChange={e => setRegFirstName(e.target.value)} placeholder="Sri" />
+              <Field label="Last Name" icon={User} type="text" value={regLastName}
+                onChange={e => setRegLastName(e.target.value)} placeholder="Optional" />
+            </div>
+            <Field label="Phone *" icon={Phone} type="tel" value={regPhone}
+              onChange={e => setRegPhone(e.target.value)} placeholder="(765) 555-1234" />
+            <Field label="Email" icon={Mail} type="email" value={regEmail}
+              onChange={e => setRegEmail(e.target.value)} placeholder="you@email.com" />
 
-          {regError && <p className="text-destructive text-sm">{regError}</p>}
+            {regError && <p className="text-destructive text-sm">{regError}</p>}
 
-          <Button
-            onClick={handleRegister}
-            disabled={regLoading}
-            className="w-full h-12 bg-primary hover:bg-primary/90 text-white font-semibold mt-2"
-          >
-            {regLoading ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : <UserPlus className="h-4 w-4 mr-2" />}
-            Create Account
-          </Button>
-
-          <p className="text-xs text-muted-foreground text-center">
-            By registering, you agree to receive order updates and occasional promos.
-          </p>
+            <Button onClick={handleRegister} disabled={regLoading}
+              className="w-full h-12 bg-primary hover:bg-primary/90 text-white font-semibold mt-2">
+              {regLoading ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : <UserPlus className="h-4 w-4 mr-2" />}
+              Sign Up for Promos
+            </Button>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  }
 
-  /* ── Dashboard screen ── */
+  const greeting = profile?.firstName
+    ? displayName(profile.firstName, profile.lastName)
+    : "Guest";
+
   return (
     <div className="bg-background min-h-screen py-12">
       <div className="container mx-auto px-4 max-w-xl">
 
-        {/* Profile card */}
         <div className="bg-card border border-border rounded-2xl p-6 mb-6">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 bg-primary/10 rounded-full flex items-center justify-center shrink-0">
               <span className="text-primary font-serif text-2xl font-bold">
-                {customer?.name?.charAt(0).toUpperCase()}
+                {greeting.charAt(0).toUpperCase()}
               </span>
             </div>
             <div className="flex-1 min-w-0">
-              <h2 className="font-serif text-2xl text-foreground">{customer?.name}</h2>
-              <p className="text-sm text-muted-foreground truncate">{customer?.email}</p>
-              <div className="flex items-center gap-3 mt-1 flex-wrap">
-                <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Phone className="h-3 w-3" /> {customer?.phone}
-                </span>
-                <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Building2 className="h-3 w-3" /> {customer?.city}
-                </span>
-              </div>
+              <h2 className="font-serif text-2xl text-foreground">
+                {profile ? `Welcome back, ${profile.firstName}!` : "My Account"}
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                {profile
+                  ? "Your details auto-fill at checkout on this device."
+                  : "Order once — we'll remember you on this phone or computer."}
+              </p>
+              {profile?.customerPhone && (
+                <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
+                  <Phone className="h-3 w-3" /> {profile.customerPhone}
+                </p>
+              )}
             </div>
             <div className="text-right shrink-0">
               <p className="text-2xl font-serif font-bold text-primary">{orders.length}</p>
@@ -356,24 +323,31 @@ export default function Account() {
           </div>
         </div>
 
-        {/* Loyalty badge */}
+        <div className="bg-muted/30 border border-border rounded-xl px-4 py-3 mb-6 text-sm text-muted-foreground">
+          For your privacy, we don't look up accounts by phone number. Order history shows orders placed on this device.
+        </div>
+
         {orders.length > 0 && (
           <div className="bg-secondary/10 border border-secondary/30 rounded-xl px-4 py-3 flex items-center gap-3 mb-6">
             <CheckCircle2 className="h-5 w-5 text-secondary shrink-0" />
             <p className="text-sm text-foreground">
-              You've ordered <span className="font-bold text-secondary">{orders.length} time{orders.length !== 1 ? "s" : ""}</span>. Thank you for your loyalty! 🙏
+              You've ordered <span className="font-bold text-secondary">{orders.length} time{orders.length !== 1 ? "s" : ""}</span> from this device. Thank you! 🙏
             </p>
           </div>
         )}
 
-        {/* Order history */}
-        <h3 className="font-serif text-xl text-foreground mb-4">Order History</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-serif text-xl text-foreground">Order History</h3>
+          <button onClick={() => setStep("register")} className="text-xs text-primary hover:underline">
+            Join promo list
+          </button>
+        </div>
 
         {orders.length === 0 ? (
           <div className="text-center py-12 bg-card border border-border rounded-2xl">
             <Clock className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-            <p className="text-foreground font-semibold mb-1">No orders yet</p>
-            <p className="text-sm text-muted-foreground mb-5">Your order history will appear here.</p>
+            <p className="text-foreground font-semibold mb-1">No orders on this device yet</p>
+            <p className="text-sm text-muted-foreground mb-5">Place an order and it will appear here automatically.</p>
             <Button asChild className="bg-primary hover:bg-primary/90 text-white">
               <Link href="/menu">Browse Menu</Link>
             </Button>
@@ -386,7 +360,6 @@ export default function Account() {
           </div>
         )}
 
-        {/* Bottom CTA */}
         <div className="flex gap-3 mt-6">
           <Button asChild variant="outline" className="flex-1 border-border hover:border-primary hover:text-primary">
             <Link href="/menu"><Package className="mr-2 h-4 w-4" /> Menu</Link>

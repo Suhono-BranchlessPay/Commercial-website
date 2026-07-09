@@ -4,6 +4,9 @@
  */
 
 import { createHmac, randomUUID } from "crypto";
+import type { StructuredAddress } from "../lib/address";
+import { addressFingerprint, formatAddress } from "../lib/address";
+import { normalizePhoneE164 } from "../lib/phone";
 
 const DOORDASH_DEVELOPER_ID = process.env.DOORDASH_DEVELOPER_ID;
 const DOORDASH_KEY_ID = process.env.DOORDASH_KEY_ID;
@@ -19,9 +22,10 @@ const PICKUP_PHONE = "+17653150073";
 const QUOTE_TTL_MS = 30 * 60 * 1000;
 
 export interface DeliveryQuoteInput {
-  customerName: string;
+  firstName: string;
+  lastName?: string | null;
   customerPhone: string;
-  deliveryAddress: string;
+  address: StructuredAddress;
   orderValueCents: number;
 }
 
@@ -37,9 +41,10 @@ export interface DeliveryQuoteResult {
 
 export interface AcceptDeliveryInput {
   externalDeliveryId: string;
-  customerName: string;
+  firstName: string;
+  lastName?: string | null;
   customerPhone: string;
-  deliveryAddress: string;
+  address: StructuredAddress;
   orderValueCents: number;
   items: Array<{ name: string; quantity: number }>;
   specialInstructions?: string | null;
@@ -55,8 +60,9 @@ export interface DoordashDeliveryResult {
 
 type CachedQuote = {
   deliveryFeeCents: number;
-  deliveryAddress: string;
-  customerName: string;
+  addressKey: string;
+  firstName: string;
+  lastName: string | null;
   customerPhone: string;
   orderValueCents: number;
   expiresAt: number;
@@ -97,11 +103,7 @@ function generateJwt(): string {
 }
 
 function normalizePhone(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  if (phone.trim().startsWith("+")) return phone.trim();
-  return `+${digits}`;
+  return normalizePhoneE164(phone);
 }
 
 function buildQuoteBody(
@@ -113,7 +115,7 @@ function buildQuoteBody(
     pickup_address: PICKUP_ADDRESS,
     pickup_business_name: PICKUP_BUSINESS_NAME,
     pickup_phone_number: PICKUP_PHONE,
-    dropoff_address: input.deliveryAddress,
+    dropoff_address: formatAddress(input.address),
     dropoff_phone_number: normalizePhone(input.customerPhone),
     order_value: input.orderValueCents,
     currency: "USD",
@@ -178,8 +180,9 @@ export async function createDeliveryQuote(
 
   quoteCache.set(externalDeliveryId, {
     deliveryFeeCents,
-    deliveryAddress: input.deliveryAddress,
-    customerName: input.customerName,
+    addressKey: addressFingerprint(input.address),
+    firstName: input.firstName,
+    lastName: input.lastName?.trim() || null,
     customerPhone: input.customerPhone,
     orderValueCents: input.orderValueCents,
     expiresAt,
@@ -210,19 +213,20 @@ export async function acceptDeliveryQuote(
   if (!cached) {
     throw new Error("Delivery quote expired. Please get a new delivery quote.");
   }
-  if (cached.deliveryAddress.trim() !== input.deliveryAddress.trim()) {
+  if (cached.addressKey !== addressFingerprint(input.address)) {
     throw new Error("Delivery address does not match the quoted address.");
   }
 
   const body = {
     ...buildQuoteBody(input.externalDeliveryId, {
-      customerName: input.customerName,
+      firstName: input.firstName,
+      lastName: input.lastName,
       customerPhone: input.customerPhone,
-      deliveryAddress: input.deliveryAddress,
+      address: input.address,
       orderValueCents: input.orderValueCents,
     }),
-    dropoff_contact_given_name: input.customerName,
-    dropoff_contact_family_name: "",
+    dropoff_contact_given_name: input.firstName,
+    dropoff_contact_family_name: input.lastName?.trim() || "",
     dropoff_contact_send_notifications: true,
     pickup_instructions: input.specialInstructions
       ? `Samurai order. ${input.specialInstructions}`
@@ -256,7 +260,7 @@ export async function acceptDeliveryQuote(
   };
 }
 
-(eventType: string): string | null {
+export function mapDoordashEventToOrderStatus(eventType: string): string | null {
   const e = eventType.toLowerCase().replace(/_/g, ".");
   if (e === "dasher.confirmed") return "preparing";
   if (e === "dasher.picked.up") return "ready";
