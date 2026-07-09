@@ -36,6 +36,11 @@ export const ordersTable = pgTable("orders", {
   paymentStatus: text("payment_status").notNull().default("unpaid"),
   squareOrderId: text("square_order_id"),
   squarePaymentId: text("square_payment_id"),
+  deliveryFee: real("delivery_fee").notNull().default(0),
+  doordashExternalDeliveryId: text("doordash_external_delivery_id"),
+  doordashTrackingUrl: text("doordash_tracking_url"),
+  doordashStatus: text("doordash_status"),
+  estimatedDropoffTime: text("estimated_dropoff_time"),
   specialInstructions: text("special_instructions"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

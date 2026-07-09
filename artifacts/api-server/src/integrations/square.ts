@@ -23,6 +23,7 @@ export interface SquareOrderInput {
   items: SquareOrderItem[];
   subtotal: number;
   tax: number;
+  deliveryFee?: number;
   total: number;
   specialInstructions?: string | null;
   /** Card nonce from Square Web Payments SDK — required for every web order. */
@@ -277,6 +278,16 @@ export async function sendOrderToSquare(
   }
 
   const lineItems = await buildSquareLineItems(input.items);
+  if (input.deliveryFee && input.deliveryFee > 0) {
+    lineItems.push({
+      name: "Delivery Fee",
+      quantity: "1",
+      base_price_money: {
+        amount: Math.round(input.deliveryFee * 100),
+        currency: "USD",
+      },
+    });
+  }
   const ticketName = input.customerName.slice(0, 30);
 
   const fulfillmentBase =
@@ -406,5 +417,24 @@ export async function syncSquareOrderFromOwnerStatus(
   await squareRequest(`/v2/orders/${squareOrderId}`, {
     method: "PUT",
     body: JSON.stringify(body),
+  });
+}
+
+/** Refund card charge when DoorDash dispatch fails after payment. */
+export async function refundSquarePayment(
+  squarePaymentId: string,
+  amountCents: number,
+  orderId: string,
+): Promise<void> {
+  if (!SQUARE_ACCESS_TOKEN || !SQUARE_LOCATION_ID) {
+    throw new Error("Square not configured for refund");
+  }
+  await squareRequest("/v2/refunds", {
+    method: "POST",
+    body: JSON.stringify({
+      idempotency_key: `refund-${orderId}`,
+      payment_id: squarePaymentId,
+      amount_money: { amount: amountCents, currency: "USD" },
+    }),
   });
 }

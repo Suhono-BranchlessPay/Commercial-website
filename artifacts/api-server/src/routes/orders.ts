@@ -10,10 +10,12 @@ import {
   isSquareWebPaymentsConfigured,
   sendOrderToSquare,
   syncSquareOrderFromOwnerStatus,
+  refundSquarePayment,
 } from "../integrations/square";
 import {
   isDoordashConfigured,
-  createDoordashDelivery,
+  acceptDeliveryQuote,
+  getCachedQuote,
 } from "../integrations/doordash";
 import {
   isBranchlesspayConfigured,
@@ -41,6 +43,7 @@ const orderInputSchema = z.object({
   items: z.array(orderLineInputSchema).min(1),
   specialInstructions: z.string().nullable().optional(),
   squarePaymentSourceId: z.string().min(1, "Card payment token is required"),
+  doordashExternalDeliveryId: z.string().nullable().optional(),
 });
 
 router.post("/orders", async (req, res): Promise<void> => {
@@ -90,8 +93,42 @@ router.post("/orders", async (req, res): Promise<void> => {
     });
 
     const tax = Math.round(subtotal * TAX_RATE * 100) / 100;
-    const total = Math.round((subtotal + tax) * 100) / 100;
     const orderId = randomUUID();
+
+    let deliveryFee = 0;
+    if (input.orderType === "delivery") {
+      if (!input.deliveryAddress || input.deliveryAddress.length < 5) {
+        res.status(400).json({ error: "Delivery address is required" });
+        return;
+      }
+      if (!isDoordashConfigured()) {
+        res.status(503).json({
+          error: "Delivery is not available right now. Please choose pickup.",
+        });
+        return;
+      }
+      if (!input.doordashExternalDeliveryId) {
+        res.status(400).json({
+          error: "Delivery quote required. Please confirm your delivery address.",
+        });
+        return;
+      }
+      const quote = getCachedQuote(input.doordashExternalDeliveryId);
+      if (!quote) {
+        res.status(400).json({
+          error: "Delivery quote expired. Please get a new delivery quote.",
+        });
+        return;
+      }
+      if (quote.deliveryAddress.trim() !== input.deliveryAddress.trim()) {
+        res.status(400).json({ error: "Delivery address does not match quote." });
+        return;
+      }
+      deliveryFee = quote.deliveryFeeCents / 100;
+    }
+
+    const total =
+      Math.round((subtotal + tax + deliveryFee) * 100) / 100;
 
     // BP Audit Shield — fraud check sebelum order disimpan
     if (isBranchlesspayConfigured()) {
@@ -152,6 +189,7 @@ router.post("/orders", async (req, res): Promise<void> => {
         })),
         subtotal,
         tax,
+        deliveryFee,
         total,
         specialInstructions: input.specialInstructions,
         squarePaymentSourceId: input.squarePaymentSourceId,
@@ -187,6 +225,11 @@ router.post("/orders", async (req, res): Promise<void> => {
       status: "pending",
       paymentTiming,
       paymentStatus,
+      deliveryFee,
+      doordashExternalDeliveryId:
+        input.orderType === "delivery"
+          ? (input.doordashExternalDeliveryId ?? null)
+          : null,
       squareOrderId: squareResult.squareOrderId,
       squarePaymentId: squareResult.squarePaymentId,
       specialInstructions: input.specialInstructions ?? null,
@@ -200,22 +243,67 @@ router.post("/orders", async (req, res): Promise<void> => {
       });
     }
 
-    // DoorDash Drive — dispatch kurir untuk order delivery
-    if (input.orderType === "delivery" && isDoordashConfigured()) {
-      if (input.deliveryAddress) {
+    let doordashTrackingUrl: string | null = null;
+    let doordashStatus: string | null = null;
+    let estimatedDropoffTime: string | null = null;
+
+    if (input.orderType === "delivery" && input.doordashExternalDeliveryId) {
+      try {
+        const ddResult = await acceptDeliveryQuote({
+          externalDeliveryId: input.doordashExternalDeliveryId,
+          customerName: input.customerName,
+          customerPhone: input.customerPhone,
+          deliveryAddress: input.deliveryAddress!,
+          orderValueCents: Math.round((subtotal + tax) * 100),
+          items: lines.map((l) => ({
+            name: l.menuItemName,
+            quantity: l.quantity,
+          })),
+          specialInstructions: input.specialInstructions,
+        });
+        doordashTrackingUrl = ddResult.trackingUrl || null;
+        doordashStatus = ddResult.status;
+        estimatedDropoffTime = ddResult.estimatedDropoffTime || null;
+
+        await db
+          .update(ordersTable)
+          .set({
+            doordashTrackingUrl,
+            doordashStatus,
+            estimatedDropoffTime,
+          })
+          .where(eq(ordersTable.id, orderId));
+
+        req.log.info(
+          {
+            deliveryId: ddResult.deliveryId,
+            trackingUrl: ddResult.trackingUrl,
+          },
+          "DoorDash delivery dispatched after payment",
+        );
+      } catch (err) {
+        req.log.error({ err, orderId }, "DoorDash dispatch failed after payment — issuing refund");
         try {
-          const ddResult = await createDoordashDelivery({
+          await refundSquarePayment(
+            squareResult.squarePaymentId,
+            Math.round(total * 100),
             orderId,
-            customerName: input.customerName,
-            customerPhone: input.customerPhone,
-            deliveryAddress: input.deliveryAddress,
-            orderTotal: total,
-            items: lines.map((l) => ({ name: l.menuItemName, quantity: l.quantity })),
-          });
-          req.log.info({ deliveryId: ddResult.deliveryId }, "DoorDash delivery dispatched");
-        } catch (err) {
-          req.log.error({ err }, "Failed to dispatch DoorDash delivery");
+          );
+          await db
+            .update(ordersTable)
+            .set({ status: "cancelled", paymentStatus: "refunded" })
+            .where(eq(ordersTable.id, orderId));
+        } catch (refundErr) {
+          req.log.error(
+            { refundErr, orderId, squarePaymentId: squareResult.squarePaymentId },
+            "CRITICAL: refund failed after DoorDash dispatch failure — manual intervention required",
+          );
         }
+        res.status(503).json({
+          error:
+            "Your card was charged but we could not dispatch delivery. A refund has been initiated. Please call the restaurant.",
+        });
+        return;
       }
     }
 
@@ -257,6 +345,8 @@ router.post("/orders", async (req, res): Promise<void> => {
     res.status(201).json({
       ...order[0],
       items: orderLines,
+      doordashTrackingUrl,
+      estimatedDropoffTime,
       createdAt: order[0]?.createdAt?.toISOString(),
     });
   } catch (err) {

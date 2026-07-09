@@ -16,11 +16,14 @@ fi
 rm -rf "$TMP"
 git clone --depth 1 "$REPO" "$TMP"
 
-for f in \
-  "artifacts/api-server/src/integrations/square.ts" \
-  "artifacts/api-server/src/routes/orders.ts" \
-  "artifacts/api-server/src/routes/square.ts" \
-  "artifacts/api-server/src/routes/index.ts" \
+    for f in \
+      "artifacts/api-server/src/integrations/square.ts" \
+      "artifacts/api-server/src/integrations/doordash.ts" \
+      "artifacts/api-server/src/routes/orders.ts" \
+      "artifacts/api-server/src/routes/square.ts" \
+      "artifacts/api-server/src/routes/delivery.ts" \
+      "artifacts/api-server/src/routes/webhooks.ts" \
+      "artifacts/api-server/src/routes/index.ts" \
   "lib/db/src/schema/menu.ts" \
   "artifacts/samurai-resto/src/pages/order.tsx" \
   "artifacts/samurai-resto/src/components/SquareCardPayment.tsx" \
@@ -44,6 +47,11 @@ if [ -n "$DBURL" ]; then
   psql "$DBURL" -c "ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_timing text NOT NULL DEFAULT 'pay_now';" || true
   psql "$DBURL" -c "ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_status text NOT NULL DEFAULT 'unpaid';" || true
   psql "$DBURL" -c "ALTER TABLE orders ADD COLUMN IF NOT EXISTS square_payment_id text;" || true
+  psql "$DBURL" -c "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_fee real NOT NULL DEFAULT 0;" || true
+  psql "$DBURL" -c "ALTER TABLE orders ADD COLUMN IF NOT EXISTS doordash_external_delivery_id text;" || true
+  psql "$DBURL" -c "ALTER TABLE orders ADD COLUMN IF NOT EXISTS doordash_tracking_url text;" || true
+  psql "$DBURL" -c "ALTER TABLE orders ADD COLUMN IF NOT EXISTS doordash_status text;" || true
+  psql "$DBURL" -c "ALTER TABLE orders ADD COLUMN IF NOT EXISTS estimated_dropoff_time text;" || true
 fi
 
 echo "==> Build API"

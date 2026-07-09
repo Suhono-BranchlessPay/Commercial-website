@@ -67,6 +67,13 @@ function ProgressBar({ step }: { step: number }) {
   );
 }
 
+type DeliveryQuote = {
+  externalDeliveryId: string;
+  deliveryFee: number;
+  estimatedDropoffTime: string | null;
+  grandTotal: number;
+};
+
 /* ══ Main Component ══ */
 export default function Order() {
   useEffect(() => { document.title = "Order Online · Samurai Hibachi & Sushi"; }, []);
@@ -77,6 +84,9 @@ export default function Order() {
   const [step, setStep]                   = useState(0); // 0=Cart 1=Details 2=Confirm 3=Done
   const [successOrderId, setSuccessOrderId] = useState<string | null>(null);
   const [successTotal, setSuccessTotal] = useState<number | null>(null);
+  const [successTrackingUrl, setSuccessTrackingUrl] = useState<string | null>(null);
+  const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
   const [cardReady, setCardReady] = useState(false);
   const [checkoutEnabled, setCheckoutEnabled] = useState<boolean | null>(null);
   const cardRef = useRef<SquareCardHandle>(null);
@@ -99,7 +109,16 @@ export default function Order() {
   const values    = form.getValues();
   const orderType = form.watch("orderType");
   const tax       = cartTotal * 0.07;
-  const total     = cartTotal + tax;
+  const deliveryFee = orderType === "delivery" ? (deliveryQuote?.deliveryFee ?? 0) : 0;
+  const total     = orderType === "delivery" && deliveryQuote
+    ? deliveryQuote.grandTotal
+    : cartTotal + tax;
+
+  useEffect(() => {
+    if (orderType !== "delivery") {
+      setDeliveryQuote(null);
+    }
+  }, [orderType]);
 
   /* ── Step 0 → 1: validate cart is non-empty ── */
   const goToDetails = () => {
@@ -115,6 +134,47 @@ export default function Order() {
   const goToConfirm = async () => {
     const ok = await form.trigger();
     if (!ok) return;
+
+    const data = form.getValues();
+    if (data.orderType === "delivery") {
+      setQuoteLoading(true);
+      setDeliveryQuote(null);
+      try {
+        const res = await fetch(`${API_BASE}/api/delivery/quote`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customerName: data.customerName,
+            customerPhone: data.customerPhone,
+            deliveryAddress: data.deliveryAddress,
+            items: items.map((item) => ({
+              menuItemId: item.menuItem.id,
+              quantity: item.quantity,
+            })),
+          }),
+        });
+        const body = await res.json() as DeliveryQuote & { error?: string };
+        if (!res.ok) {
+          throw new Error(body.error ?? "Cannot deliver to this address");
+        }
+        setDeliveryQuote({
+          externalDeliveryId: body.externalDeliveryId,
+          deliveryFee: body.deliveryFee,
+          estimatedDropoffTime: body.estimatedDropoffTime,
+          grandTotal: body.grandTotal,
+        });
+      } catch (err) {
+        toast({
+          title: "Delivery unavailable",
+          description: err instanceof Error ? err.message : "Please try a different address or pickup.",
+          variant: "destructive",
+        });
+        setQuoteLoading(false);
+        return;
+      }
+      setQuoteLoading(false);
+    }
+
     setStep(2);
     window.scrollTo(0, 0);
   };
@@ -153,9 +213,20 @@ export default function Order() {
       return;
     }
 
+    if (data.orderType === "delivery" && !deliveryQuote) {
+      toast({
+        title: "Delivery quote required",
+        description: "Go back and confirm your delivery address.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const orderInput = {
       ...data,
       squarePaymentSourceId,
+      doordashExternalDeliveryId:
+        data.orderType === "delivery" ? deliveryQuote?.externalDeliveryId : null,
       items: items.map(item => ({
         menuItemId: item.menuItem.id,
         quantity: item.quantity,
@@ -166,7 +237,11 @@ export default function Order() {
       onSuccess: (response) => {
         setSuccessOrderId(response.id);
         setSuccessTotal(response.total);
+        setSuccessTrackingUrl(
+          (response as { doordashTrackingUrl?: string | null }).doordashTrackingUrl ?? null,
+        );
         clearCart();
+        setDeliveryQuote(null);
         setStep(3);
         window.scrollTo(0, 0);
       },
@@ -213,9 +288,32 @@ export default function Order() {
               </div>
             )}
           </div>
-          <p className="text-xs text-muted-foreground mb-6">
-            Your card has been charged ${(successTotal ?? total).toFixed(2)}. We&apos;ll call you at {values.customerPhone} when your order is ready.
+          <p className="text-xs text-muted-foreground mb-4">
+            Your card has been charged ${(successTotal ?? total).toFixed(2)}.
+            {values.orderType === "delivery"
+              ? " Your order is being prepared and a Dasher will be assigned shortly."
+              : ` We'll call you at ${values.customerPhone} when your order is ready.`}
           </p>
+          {successTrackingUrl && (
+            <a
+              href={successTrackingUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-primary font-semibold underline mb-6 block"
+            >
+              Track your delivery on DoorDash →
+            </a>
+          )}
+          {!successTrackingUrl && values.orderType === "delivery" && (
+            <p className="text-xs text-muted-foreground mb-6">
+              Tracking link will be sent when your Dasher is assigned.
+            </p>
+          )}
+          {values.orderType === "pickup" && (
+            <p className="text-xs text-muted-foreground mb-6">
+              We&apos;ll call you at {values.customerPhone} when your order is ready.
+            </p>
+          )}
           <Button asChild className="w-full h-12 text-base bg-primary hover:bg-primary/90 text-white">
             <Link href="/">← Back to Home</Link>
           </Button>
@@ -386,8 +484,10 @@ export default function Order() {
                 <Button variant="outline" onClick={() => setStep(0)} className="flex-1 border-border">
                   <ArrowLeft className="mr-2 h-4 w-4" /> Back
                 </Button>
-                <Button onClick={goToConfirm} className="flex-1 bg-primary hover:bg-primary/90 text-white h-12">
-                  Review Order <ArrowRight className="ml-2 h-4 w-4" />
+                <Button onClick={goToConfirm} disabled={quoteLoading} className="flex-1 bg-primary hover:bg-primary/90 text-white h-12">
+                  {quoteLoading
+                    ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Getting delivery quote…</>
+                    : <>Review Order <ArrowRight className="ml-2 h-4 w-4" /></>}
                 </Button>
               </div>
             </div>
@@ -415,6 +515,16 @@ export default function Order() {
               <div className="px-6 py-4 border-t border-border bg-muted/20 space-y-2">
                 <div className="flex justify-between text-sm text-muted-foreground"><span>Subtotal</span><span>${cartTotal.toFixed(2)}</span></div>
                 <div className="flex justify-between text-sm text-muted-foreground"><span>Tax (7%)</span><span>${tax.toFixed(2)}</span></div>
+                {values.orderType === "delivery" && deliveryQuote && (
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>Delivery</span><span>${deliveryQuote.deliveryFee.toFixed(2)}</span>
+                  </div>
+                )}
+                {values.orderType === "delivery" && deliveryQuote?.estimatedDropoffTime && (
+                  <p className="text-xs text-muted-foreground">
+                    Est. delivery by {new Date(deliveryQuote.estimatedDropoffTime).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                  </p>
+                )}
                 <Separator />
                 <div className="flex justify-between font-serif text-2xl font-bold text-foreground pt-1">
                   <span>Total</span><span className="text-primary">${total.toFixed(2)}</span>

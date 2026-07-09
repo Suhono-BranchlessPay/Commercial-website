@@ -6,6 +6,8 @@ import customersRouter from "./customers";
 import settingsRouter from "./settings";
 import versionRouter from "./version";
 import squareRouter from "./square";
+import deliveryRouter from "./delivery";
+import webhooksRouter from "./webhooks";
 
 const router: IRouter = Router();
 
@@ -16,5 +18,7 @@ router.use(customersRouter);
 router.use(settingsRouter);
 router.use(versionRouter);
 router.use(squareRouter);
+router.use(deliveryRouter);
+router.use(webhooksRouter);
 
 export default router;

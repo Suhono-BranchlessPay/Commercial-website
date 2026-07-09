@@ -1,0 +1,82 @@
+import { Router } from "express";
+import { z } from "zod";
+import { db } from "@workspace/db";
+import { menuItemsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
+import {
+  createDeliveryQuote,
+  isDoordashConfigured,
+} from "../integrations/doordash";
+
+const router = Router();
+
+const quoteInputSchema = z.object({
+  customerName: z.string().min(1),
+  customerPhone: z.string().min(10),
+  deliveryAddress: z.string().min(5),
+  items: z
+    .array(
+      z.object({
+        menuItemId: z.string(),
+        quantity: z.number().int().min(1),
+      }),
+    )
+    .min(1),
+});
+
+router.post("/delivery/quote", async (req, res): Promise<void> => {
+  if (!isDoordashConfigured()) {
+    res.status(503).json({
+      error: "Delivery is not available right now. Please try pickup or call the restaurant.",
+    });
+    return;
+  }
+
+  const parsed = quoteInputSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid delivery quote request" });
+    return;
+  }
+
+  const input = parsed.data;
+  const TAX_RATE = 0.07;
+  let subtotal = 0;
+
+  for (const item of input.items) {
+    const rows = await db
+      .select()
+      .from(menuItemsTable)
+      .where(eq(menuItemsTable.id, item.menuItemId));
+    const price = rows[0]?.price ?? 0;
+    subtotal += price * item.quantity;
+  }
+
+  const tax = Math.round(subtotal * TAX_RATE * 100) / 100;
+  const orderValueCents = Math.round((subtotal + tax) * 100);
+
+  try {
+    const quote = await createDeliveryQuote({
+      customerName: input.customerName,
+      customerPhone: input.customerPhone,
+      deliveryAddress: input.deliveryAddress,
+      orderValueCents,
+    });
+
+    res.json({
+      ...quote,
+      foodSubtotal: subtotal,
+      foodTax: tax,
+      foodTotal: subtotal + tax,
+      grandTotal: Math.round((subtotal + tax + quote.deliveryFee) * 100) / 100,
+    });
+  } catch (err) {
+    req.log.error({ err }, "DoorDash quote failed");
+    const message =
+      err instanceof Error
+        ? err.message
+        : "We cannot deliver to this address right now.";
+    res.status(400).json({ error: message });
+  }
+});
+
+export default router;
