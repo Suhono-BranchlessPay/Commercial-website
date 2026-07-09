@@ -90,7 +90,12 @@ function generateJwt(): string {
     throw new Error("DoorDash credentials not configured");
   }
 
-  const headerObj = { alg: "HS256", "dd-ver": "DD-JWT-V1", kid: DOORDASH_KEY_ID };
+  const headerObj = {
+    alg: "HS256",
+    typ: "JWT",
+    "dd-ver": "DD-JWT-V1",
+    kid: DOORDASH_KEY_ID,
+  };
   const header = Buffer.from(JSON.stringify(headerObj)).toString("base64url");
 
   const now = Math.floor(Date.now() / 1000);
