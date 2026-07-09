@@ -8,6 +8,7 @@ import {
   isDoordashConfigured,
 } from "../integrations/doordash";
 import {
+  addressFingerprint,
   isWithinDeliveryRadius,
   OUT_OF_RADIUS_MESSAGE,
   structuredAddressSchema,
