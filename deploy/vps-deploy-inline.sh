@@ -54,7 +54,8 @@ git clone --depth 1 "$REPO" "$TMP"
       "lib/api-client-react/src/generated/api.schemas.ts" \
       "scripts/migrate-customer-foundation.sql" \
       "scripts/migrate-multi-tenant-foundation.sql" \
-      "scripts/migrate-kirin-and-bp-anchor.sql"
+      "scripts/migrate-kirin-and-bp-anchor.sql" \
+      "scripts/seed-kirin-menu.sql"
 do
   mkdir -p "$(dirname "$ROOT/$f")"
   cp "$TMP/$f" "$ROOT/$f"
@@ -80,6 +81,7 @@ if [ -n "$DBURL" ]; then
   psql "$DBURL" -f "$TMP/scripts/migrate-customer-foundation.sql" || true
   psql "$DBURL" -f "$TMP/scripts/migrate-multi-tenant-foundation.sql" || true
   psql "$DBURL" -f "$TMP/scripts/migrate-kirin-and-bp-anchor.sql" || true
+  psql "$DBURL" -f "$TMP/scripts/seed-kirin-menu.sql" || true
 fi
 
 echo "==> Build API"
