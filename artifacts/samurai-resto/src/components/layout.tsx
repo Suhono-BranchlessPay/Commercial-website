@@ -76,7 +76,7 @@ export function CartDrawer() {
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const { cartCount, cartTotal, setIsCartOpen } = useCart();
-  const { brandName, logoSrc, phoneDisplay, phoneTel, addressLine, cityLine } =
+  const { brandName, logoSrc, phoneDisplay, phoneTel, addressLine, cityLine, contactEmail, facebookUrl } =
     useTenant();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [location] = useLocation();

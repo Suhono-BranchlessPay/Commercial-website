@@ -36,6 +36,8 @@ export type TenantPublicConfig = {
     state: string | null;
     postcode: string | null;
     phone: string | null;
+    email?: string | null;
+    facebookUrl?: string | null;
   } | null;
 };
 
@@ -48,6 +50,8 @@ type TenantContextValue = {
   phoneTel: string;
   addressLine: string;
   cityLine: string;
+  contactEmail: string | null;
+  facebookUrl: string | null;
 };
 
 const TenantContext = createContext<TenantContextValue | null>(null);
@@ -125,6 +129,18 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       phoneTel: phone || "+17653150073",
       addressLine: address || "789 E Morgan St",
       cityLine: cityLine || "Martinsville, IN 46151",
+      contactEmail:
+        data?.restaurant?.email ||
+        (typeof data?.theme?.contactEmail === "string"
+          ? data.theme.contactEmail
+          : null) ||
+        null,
+      facebookUrl:
+        data?.restaurant?.facebookUrl ||
+        (typeof data?.theme?.facebookUrl === "string"
+          ? data.theme.facebookUrl
+          : null) ||
+        null,
     };
   }, [data, isLoading]);
 

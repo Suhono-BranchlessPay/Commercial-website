@@ -27,14 +27,16 @@ INSERT INTO tenants (
   37.78751,
   -87.40068,
   12,
-  NULL,
+  '+12708233405',
   'Kirin Hibachi Express',
   '{
     "primary": "0 72% 38%",
     "secondary": "40 30% 88%",
     "accent": "0 0% 5%",
     "brandName": "Kirin Hibachi Express",
-    "logoUrl": "/kirin-logo.png"
+    "logoUrl": "/kirin-logo.png",
+    "contactEmail": "kirinhibachiexpress26@gmail.com",
+    "facebookUrl": "https://www.facebook.com/profile.php?id=61591591400890"
   }'::jsonb,
   'active'
 )
@@ -49,6 +51,7 @@ ON CONFLICT (id) DO UPDATE SET
   lat = EXCLUDED.lat,
   lng = EXCLUDED.lng,
   service_area_radius = EXCLUDED.service_area_radius,
+  pickup_phone = EXCLUDED.pickup_phone,
   pickup_business_name = EXCLUDED.pickup_business_name,
   theme = EXCLUDED.theme,
   status = EXCLUDED.status;

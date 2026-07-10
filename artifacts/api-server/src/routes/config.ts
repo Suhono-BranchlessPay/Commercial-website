@@ -42,6 +42,14 @@ router.get("/config/checkout", (req, res): void => {
           state: tenant.state,
           postcode: tenant.postcode,
           phone: tenant.pickupPhone,
+          email:
+            typeof tenant.theme?.contactEmail === "string"
+              ? tenant.theme.contactEmail
+              : null,
+          facebookUrl:
+            typeof tenant.theme?.facebookUrl === "string"
+              ? tenant.theme.facebookUrl
+              : null,
         }
       : null,
   });
