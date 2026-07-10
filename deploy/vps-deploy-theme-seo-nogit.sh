@@ -20,6 +20,15 @@ rm -rf "$SRC"
 git clone --depth 1 "$REPO" "$SRC"
 
 echo "==> 2) Sync code (keep ecosystem, .env, uploads, node_modules)"
+# Fix common zip-deploy corruption: index.html sometimes becomes a directory
+if [ -d "$ROOT/artifacts/samurai-resto/index.html" ]; then
+  echo "WARN: removing directory masquerading as index.html"
+  rm -rf "$ROOT/artifacts/samurai-resto/index.html"
+fi
+if [ -d "$ROOT/artifacts/samurai-resto/dist/public/index.html" ]; then
+  rm -rf "$ROOT/artifacts/samurai-resto/dist/public/index.html"
+fi
+
 rsync -a \
   --exclude 'ecosystem.config.cjs' \
   --exclude '.env' \
@@ -29,6 +38,13 @@ rsync -a \
   --exclude 'artifacts/samurai-resto/dist' \
   --exclude '.git' \
   "$SRC"/ "$ROOT"/
+
+# Ensure source index.html is a real file after sync
+if [ ! -f "$ROOT/artifacts/samurai-resto/index.html" ]; then
+  echo "ERROR: artifacts/samurai-resto/index.html is missing or not a file"
+  ls -la "$ROOT/artifacts/samurai-resto/index.html" || true
+  exit 1
+fi
 
 echo "==> 3) Apply Kirin Theme Pack"
 psql "$DBURL" -f "$ROOT/scripts/apply-kirin-themepack.sql"
