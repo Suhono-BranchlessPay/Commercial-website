@@ -19,6 +19,7 @@ git clone --depth 1 "$REPO" "$TMP"
     for f in \
       "artifacts/api-server/src/integrations/square.ts" \
       "artifacts/api-server/src/integrations/doordash.ts" \
+      "artifacts/api-server/src/integrations/branchlesspay.ts" \
       "artifacts/api-server/src/lib/tenant.ts" \
       "artifacts/api-server/src/lib/phone.ts" \
       "artifacts/api-server/src/lib/address.ts" \
@@ -37,6 +38,9 @@ git clone --depth 1 "$REPO" "$TMP"
       "lib/db/src/schema/customers.ts" \
       "lib/db/src/schema/tenants.ts" \
       "lib/db/src/schema/index.ts" \
+      "artifacts/samurai-resto/src/components/layout.tsx" \
+      "artifacts/samurai-resto/src/App.tsx" \
+      "artifacts/samurai-resto/src/lib/tenant.tsx" \
       "artifacts/samurai-resto/src/pages/order.tsx" \
       "artifacts/samurai-resto/src/pages/account.tsx" \
       "artifacts/samurai-resto/src/lib/checkoutStorage.ts" \
@@ -48,7 +52,8 @@ git clone --depth 1 "$REPO" "$TMP"
       "lib/api-zod/src/generated/types/structuredAddress.ts" \
       "lib/api-client-react/src/generated/api.schemas.ts" \
       "scripts/migrate-customer-foundation.sql" \
-      "scripts/migrate-multi-tenant-foundation.sql"
+      "scripts/migrate-multi-tenant-foundation.sql" \
+      "scripts/migrate-kirin-and-bp-anchor.sql"
 do
   mkdir -p "$(dirname "$ROOT/$f")"
   cp "$TMP/$f" "$ROOT/$f"
@@ -73,6 +78,7 @@ if [ -n "$DBURL" ]; then
   psql "$DBURL" -c "ALTER TABLE orders ADD COLUMN IF NOT EXISTS estimated_dropoff_time text;" || true
   psql "$DBURL" -f "$TMP/scripts/migrate-customer-foundation.sql" || true
   psql "$DBURL" -f "$TMP/scripts/migrate-multi-tenant-foundation.sql" || true
+  psql "$DBURL" -f "$TMP/scripts/migrate-kirin-and-bp-anchor.sql" || true
 fi
 
 echo "==> Build API"

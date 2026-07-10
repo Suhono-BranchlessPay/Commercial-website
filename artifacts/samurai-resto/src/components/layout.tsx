@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useCart } from "@/lib/cart";
+import { useTenant } from "@/lib/tenant";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
@@ -75,6 +76,8 @@ export function CartDrawer() {
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const { cartCount, cartTotal, setIsCartOpen } = useCart();
+  const { brandName, logoSrc, phoneDisplay, phoneTel, addressLine, cityLine } =
+    useTenant();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [location] = useLocation();
 
@@ -86,14 +89,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
     { href: "/order", label: "Order Online" },
   ];
 
+  const mapsQuery = encodeURIComponent(`${addressLine} ${cityLine}`);
+
   return (
     <div className="min-h-[100dvh] flex flex-col bg-background selection:bg-primary/20">
       <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-4 h-20 flex items-center justify-between">
           <Link href="/" className="flex items-center">
             <img
-              src="/samurai-logo.png"
-              alt="Samurai Hibachi & Sushi"
+              src={logoSrc}
+              alt={brandName}
               className="h-16 w-auto"
             />
           </Link>
@@ -152,7 +157,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <SheetContent side="right" className="w-[300px] sm:w-[400px]">
           <SheetHeader className="text-left">
             <SheetTitle asChild>
-              <img src="/samurai-logo.png" alt="Samurai Hibachi & Sushi" className="h-16 w-auto" />
+              <img src={logoSrc} alt={brandName} className="h-16 w-auto" />
             </SheetTitle>
           </SheetHeader>
           <div className="flex flex-col gap-6 mt-8">
@@ -212,24 +217,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <footer className="bg-accent text-accent-foreground py-16 border-t-4 border-primary">
         <div className="container mx-auto px-4 grid grid-cols-1 md:grid-cols-3 gap-12 text-center md:text-left">
           <div>
-            <img src="/samurai-logo.png" alt="Samurai Hibachi & Sushi" className="h-20 w-auto mb-4" />
+            <img src={logoSrc} alt={brandName} className="h-20 w-auto mb-4" />
             <a
-              href="https://www.google.com/maps/search/?api=1&query=789+E+Morgan+St+Martinsville+IN+46151"
+              href={`https://www.google.com/maps/search/?api=1&query=${mapsQuery}`}
               target="_blank"
               rel="noreferrer"
               className="block text-accent-foreground/80 hover:text-primary transition-colors mb-1 underline underline-offset-2"
             >
-              789 E Morgan St
+              {addressLine}
             </a>
-            <p className="text-accent-foreground/80 mb-5">Martinsville, IN 46151</p>
-            <a href="tel:+17653150073" className="block text-xl font-serif text-primary hover:text-primary-foreground transition-colors mb-2">
-              (765) 315-0073
-            </a>
-            <a href="mailto:samurairesromartins@gmail.com" className="text-accent-foreground/60 hover:text-accent-foreground transition-colors text-sm">
-              samurairesromartins@gmail.com
+            <p className="text-accent-foreground/80 mb-5">{cityLine}</p>
+            <a href={`tel:${phoneTel}`} className="block text-xl font-serif text-primary hover:text-primary-foreground transition-colors mb-2">
+              {phoneDisplay}
             </a>
             <a
-              href="tel:+17653150073"
+              href={`tel:${phoneTel}`}
               className="mt-5 flex items-center justify-center md:justify-start gap-2 bg-primary hover:bg-primary/90 text-white font-semibold text-sm py-2.5 px-5 rounded-full transition-colors w-fit"
             >
               📞 Call to Order
@@ -260,23 +262,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <h3 className="font-serif text-xl mb-6 text-primary-foreground">Connect</h3>
             <div className="flex flex-col items-center md:items-start gap-4">
               <a
-                href="https://www.facebook.com/samuraimartinsville"
-                target="_blank"
-                rel="noreferrer"
-                className="text-accent-foreground/80 hover:text-primary transition-colors underline underline-offset-4"
-              >
-                📘 Follow us on Facebook
-              </a>
-              <a
-                href="https://www.doordash.com/store/samurai-hibachi-sushi-martinsville-25137825/"
-                target="_blank"
-                rel="noreferrer"
-                className="text-accent-foreground/80 hover:text-primary transition-colors underline underline-offset-4"
-              >
-                🚗 Order on DoorDash
-              </a>
-              <a
-                href="https://www.google.com/maps/search/Samurai+Hibachi+Sushi+Martinsville+Indiana"
+                href={`https://www.google.com/maps/search/?api=1&query=${mapsQuery}`}
                 target="_blank"
                 rel="noreferrer"
                 className="text-accent-foreground/80 hover:text-primary transition-colors underline underline-offset-4"
@@ -285,8 +271,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
               </a>
             </div>
             <div className="mt-8 pt-6 border-t border-accent-foreground/10 text-center md:text-left">
-              <p className="text-xs text-accent-foreground/40">© {new Date().getFullYear()} Samurai Hibachi &amp; Sushi</p>
-              <p className="text-xs text-accent-foreground/30 mt-1">Martinsville, Indiana · All rights reserved</p>
+              <p className="text-xs text-accent-foreground/40">© {new Date().getFullYear()} {brandName}</p>
+              <p className="text-xs text-accent-foreground/30 mt-1">{cityLine} · All rights reserved</p>
             </div>
           </div>
         </div>

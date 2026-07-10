@@ -20,6 +20,7 @@ router.get("/config/checkout", (req, res): void => {
     tenantId,
     name: tenant?.name ?? null,
     theme: tenant?.theme ?? null,
+    logoUrl: tenant?.logoUrl ?? null,
     googleMapsApiKey: GOOGLE_MAPS_API_KEY || null,
     places: {
       country: "us",

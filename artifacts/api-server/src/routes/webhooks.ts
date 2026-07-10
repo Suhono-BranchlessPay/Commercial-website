@@ -71,10 +71,14 @@ router.post("/webhooks/doordash", async (req, res): Promise<void> => {
   if (
     mappedStatus === "completed" &&
     order.squareOrderId &&
-    isSquareConfigured()
+    isSquareConfigured(order.tenantId)
   ) {
     try {
-      await syncSquareOrderFromOwnerStatus(order.squareOrderId, "completed");
+      await syncSquareOrderFromOwnerStatus(
+        order.squareOrderId,
+        "completed",
+        order.tenantId,
+      );
     } catch (err) {
       req.log.error({ err }, "Square complete sync from DoorDash webhook failed");
     }

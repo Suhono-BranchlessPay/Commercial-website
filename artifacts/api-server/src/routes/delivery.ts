@@ -12,7 +12,7 @@ import {
   OUT_OF_RADIUS_MESSAGE,
   structuredAddressSchema,
 } from "../lib/address";
-import { getTenantId } from "../lib/tenant";
+import { getTenantId, envFallbackTenant } from "../lib/tenant";
 
 const router = Router();
 
@@ -32,7 +32,7 @@ const quoteInputSchema = z.object({
 });
 
 router.post("/delivery/quote", async (req, res): Promise<void> => {
-  if (!isDoordashConfigured()) {
+  if (!isDoordashConfigured(req.tenant?.slug ?? getTenantId())) {
     res.status(503).json({
       error:
         "Delivery is not available right now. Please try pickup or call the restaurant.",
@@ -47,16 +47,16 @@ router.post("/delivery/quote", async (req, res): Promise<void> => {
   }
 
   const input = parsed.data;
+  const tenant = req.tenant ?? envFallbackTenant();
+  const tenantId = tenant.id;
 
-  const tenant = req.tenant;
-  const tenantId = tenant?.id ?? getTenantId();
   if (
     !isWithinDeliveryRadius(
       input.address.lat,
       input.address.lng,
-      tenant?.serviceAreaRadius,
-      tenant?.lat,
-      tenant?.lng,
+      tenant.serviceAreaRadius,
+      tenant.lat,
+      tenant.lng,
     )
   ) {
     res.status(400).json({ error: OUT_OF_RADIUS_MESSAGE });
@@ -90,6 +90,7 @@ router.post("/delivery/quote", async (req, res): Promise<void> => {
       customerPhone: input.customerPhone,
       address: input.address,
       orderValueCents,
+      tenant,
     });
 
     res.json({

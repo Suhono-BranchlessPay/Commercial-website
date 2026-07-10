@@ -1,23 +1,17 @@
 /**
- * DoorDash Drive (On-Demand Delivery) — quote → pay → accept dispatch.
- * JWT auth: DD-JWT-V1 HS256 (same pattern as BP Doordash collector).
+ * DoorDash Drive — quote → pay → accept dispatch.
+ * Credentials + pickup identity resolved per tenant.
  */
 
 import { createHmac, randomUUID } from "crypto";
 import type { StructuredAddress } from "../lib/address";
 import { addressFingerprint, formatAddress } from "../lib/address";
 import { normalizePhoneE164 } from "../lib/phone";
+import { tenantSecret, type TenantContext } from "../lib/tenant";
 
-const DOORDASH_DEVELOPER_ID = process.env.DOORDASH_DEVELOPER_ID;
-const DOORDASH_KEY_ID = process.env.DOORDASH_KEY_ID;
-const DOORDASH_SIGNING_SECRET = process.env.DOORDASH_SIGNING_SECRET;
 const DOORDASH_BASE_URL =
   process.env.DOORDASH_API_BASE?.replace(/\/$/, "") ??
   "https://openapi.doordash.com";
-
-const PICKUP_ADDRESS = "789 E Morgan St, Martinsville, IN 46151";
-const PICKUP_BUSINESS_NAME = "Samurai Hibachi & Sushi";
-const PICKUP_PHONE = "+17653150073";
 
 const QUOTE_TTL_MS = 30 * 60 * 1000;
 
@@ -27,6 +21,7 @@ export interface DeliveryQuoteInput {
   customerPhone: string;
   address: StructuredAddress;
   orderValueCents: number;
+  tenant: TenantContext;
 }
 
 export interface DeliveryQuoteResult {
@@ -49,6 +44,7 @@ export interface AcceptDeliveryInput {
   orderValueCents: number;
   items: Array<{ name: string; quantity: number }>;
   specialInstructions?: string | null;
+  tenant: TenantContext;
 }
 
 export interface DoordashDeliveryResult {
@@ -67,14 +63,28 @@ type CachedQuote = {
   customerPhone: string;
   orderValueCents: number;
   expiresAt: number;
+  tenantSlug: string;
 };
 
 const quoteCache = new Map<string, CachedQuote>();
 
-export function isDoordashConfigured(): boolean {
-  return Boolean(
-    DOORDASH_DEVELOPER_ID && DOORDASH_KEY_ID && DOORDASH_SIGNING_SECRET,
-  );
+type DdCreds = {
+  developerId: string;
+  keyId: string;
+  signingSecret: string;
+};
+
+function resolveDdCreds(slug: string): DdCreds | null {
+  const developerId = tenantSecret(slug, "DOORDASH_DEVELOPER_ID");
+  const keyId = tenantSecret(slug, "DOORDASH_KEY_ID");
+  const signingSecret = tenantSecret(slug, "DOORDASH_SIGNING_SECRET");
+  if (!developerId || !keyId || !signingSecret) return null;
+  return { developerId, keyId, signingSecret };
+}
+
+export function isDoordashConfigured(slug?: string): boolean {
+  const s = slug ?? process.env.TENANT_ID?.trim() ?? "samurai";
+  return resolveDdCreds(s) !== null;
 }
 
 function decodeSigningSecret(signingSecret: string): Buffer {
@@ -86,16 +96,12 @@ function decodeSigningSecret(signingSecret: string): Buffer {
   }
 }
 
-function generateJwt(): string {
-  if (!DOORDASH_DEVELOPER_ID || !DOORDASH_KEY_ID || !DOORDASH_SIGNING_SECRET) {
-    throw new Error("DoorDash credentials not configured");
-  }
-
+function generateJwt(creds: DdCreds): string {
   const headerObj = {
     alg: "HS256",
     typ: "JWT",
     "dd-ver": "DD-JWT-V1",
-    kid: DOORDASH_KEY_ID,
+    kid: creds.keyId,
   };
   const header = Buffer.from(JSON.stringify(headerObj)).toString("base64url");
 
@@ -103,14 +109,14 @@ function generateJwt(): string {
   const payload = Buffer.from(
     JSON.stringify({
       aud: "doordash",
-      iss: DOORDASH_DEVELOPER_ID,
-      kid: DOORDASH_KEY_ID,
+      iss: creds.developerId,
+      kid: creds.keyId,
       exp: now + 300,
       iat: now,
     }),
   ).toString("base64url");
 
-  const secretKey = decodeSigningSecret(DOORDASH_SIGNING_SECRET);
+  const secretKey = decodeSigningSecret(creds.signingSecret);
   const signature = createHmac("sha256", secretKey)
     .update(`${header}.${payload}`)
     .digest("base64url");
@@ -118,31 +124,35 @@ function generateJwt(): string {
   return `${header}.${payload}.${signature}`;
 }
 
-function normalizePhone(phone: string): string {
-  return normalizePhoneE164(phone);
+function pickupFromTenant(tenant: TenantContext) {
+  return {
+    pickup_address: tenant.pickupAddressFormatted,
+    pickup_business_name:
+      tenant.pickupBusinessName?.trim() || tenant.name,
+    pickup_phone_number: tenant.pickupPhone || "+10000000000",
+  };
 }
 
 function buildQuoteBody(
   externalDeliveryId: string,
-  input: DeliveryQuoteInput,
+  input: Omit<DeliveryQuoteInput, "tenant"> & { tenant: TenantContext },
 ) {
   return {
     external_delivery_id: externalDeliveryId,
-    pickup_address: PICKUP_ADDRESS,
-    pickup_business_name: PICKUP_BUSINESS_NAME,
-    pickup_phone_number: PICKUP_PHONE,
+    ...pickupFromTenant(input.tenant),
     dropoff_address: formatAddress(input.address),
-    dropoff_phone_number: normalizePhone(input.customerPhone),
+    dropoff_phone_number: normalizePhoneE164(input.customerPhone),
     order_value: input.orderValueCents,
     currency: "USD",
   };
 }
 
 async function ddRequest<T>(
+  creds: DdCreds,
   path: string,
   init: RequestInit,
 ): Promise<T> {
-  const jwt = generateJwt();
+  const jwt = generateJwt(creds);
   const response = await fetch(`${DOORDASH_BASE_URL}${path}`, {
     ...init,
     headers: {
@@ -168,13 +178,11 @@ export function getCachedQuote(externalDeliveryId: string): CachedQuote | null {
   return cached;
 }
 
-/**
- * Step 1 — POST /drive/v2/quotes before checkout payment.
- */
 export async function createDeliveryQuote(
   input: DeliveryQuoteInput,
 ): Promise<DeliveryQuoteResult> {
-  if (!isDoordashConfigured()) {
+  const creds = resolveDdCreds(input.tenant.slug);
+  if (!creds) {
     throw new Error("DoorDash Drive is not configured on this server.");
   }
 
@@ -184,11 +192,9 @@ export async function createDeliveryQuote(
     currency?: string;
     estimated_pickup_time?: string;
     estimated_dropoff_time?: string;
-  }>("/drive/v2/quotes", {
+  }>(creds, "/drive/v2/quotes", {
     method: "POST",
-    body: JSON.stringify(
-      buildQuoteBody(externalDeliveryId, input),
-    ),
+    body: JSON.stringify(buildQuoteBody(externalDeliveryId, input)),
   });
 
   const deliveryFeeCents = data.fee ?? 0;
@@ -202,6 +208,7 @@ export async function createDeliveryQuote(
     customerPhone: input.customerPhone,
     orderValueCents: input.orderValueCents,
     expiresAt,
+    tenantSlug: input.tenant.slug,
   });
 
   return {
@@ -216,13 +223,11 @@ export async function createDeliveryQuote(
   };
 }
 
-/**
- * Step 2 — after card payment succeeds, accept quote → Dasher dispatched.
- */
 export async function acceptDeliveryQuote(
   input: AcceptDeliveryInput,
 ): Promise<DoordashDeliveryResult> {
-  if (!isDoordashConfigured()) {
+  const creds = resolveDdCreds(input.tenant.slug);
+  if (!creds) {
     throw new Error("DoorDash Drive is not configured.");
   }
 
@@ -234,6 +239,7 @@ export async function acceptDeliveryQuote(
     throw new Error("Delivery address does not match the quoted address.");
   }
 
+  const brand = input.tenant.name;
   const body = {
     ...buildQuoteBody(input.externalDeliveryId, {
       firstName: input.firstName,
@@ -241,13 +247,14 @@ export async function acceptDeliveryQuote(
       customerPhone: input.customerPhone,
       address: input.address,
       orderValueCents: input.orderValueCents,
+      tenant: input.tenant,
     }),
     dropoff_contact_given_name: input.firstName,
     dropoff_contact_family_name: input.lastName?.trim() || "",
     dropoff_contact_send_notifications: true,
     pickup_instructions: input.specialInstructions
-      ? `Samurai order. ${input.specialInstructions}`
-      : "Samurai website delivery pickup",
+      ? `${brand} order. ${input.specialInstructions}`
+      : `${brand} website delivery pickup`,
     items: input.items.map((item) => ({
       name: item.name,
       quantity: item.quantity,
@@ -261,10 +268,14 @@ export async function acceptDeliveryQuote(
     estimated_dropoff_time?: string;
     delivery_status?: string;
     status?: string;
-  }>(`/drive/v2/quotes/${encodeURIComponent(input.externalDeliveryId)}/accept`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
+  }>(
+    creds,
+    `/drive/v2/quotes/${encodeURIComponent(input.externalDeliveryId)}/accept`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
 
   quoteCache.delete(input.externalDeliveryId);
 

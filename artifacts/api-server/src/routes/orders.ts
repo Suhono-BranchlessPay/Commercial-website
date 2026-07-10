@@ -24,6 +24,8 @@ import {
 import {
   isBranchlesspayConfigured,
   auditOrderWithBpShield,
+  isBpAnchorConfigured,
+  anchorPaidOrder,
 } from "../integrations/branchlesspay";
 import {
   isOwnerConfigured,
@@ -37,7 +39,7 @@ import {
   structuredAddressSchema,
 } from "../lib/address";
 import { displayName } from "../lib/phone";
-import { getTenantId } from "../lib/tenant";
+import { envFallbackTenant, getTenantId } from "../lib/tenant";
 
 const router = Router();
 
@@ -68,8 +70,8 @@ router.post("/orders", async (req, res): Promise<void> => {
   }
 
   const input = parsed.data;
-  const tenant = req.tenant;
-  const tenantId = tenant?.id ?? getTenantId();
+  const tenant = req.tenant ?? envFallbackTenant();
+  const tenantId = tenant.id;
   const customerDisplayName = displayName(input.firstName, input.lastName);
 
   try {
@@ -82,9 +84,9 @@ router.post("/orders", async (req, res): Promise<void> => {
         !isWithinDeliveryRadius(
           input.address.lat,
           input.address.lng,
-          tenant?.serviceAreaRadius,
-          tenant?.lat,
-          tenant?.lng,
+          tenant.serviceAreaRadius,
+          tenant.lat,
+          tenant.lng,
         )
       ) {
         res.status(400).json({ error: OUT_OF_RADIUS_MESSAGE });
@@ -146,7 +148,7 @@ router.post("/orders", async (req, res): Promise<void> => {
         `${addr.city}, ${addr.state} ${addr.postcode}`,
       ].join(", ");
 
-      if (!isDoordashConfigured()) {
+      if (!isDoordashConfigured(tenant.slug)) {
         res.status(503).json({
           error: "Delivery is not available right now. Please choose pickup.",
         });
@@ -183,7 +185,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       address: input.orderType === "delivery" ? input.address! : null,
     });
 
-    if (isBranchlesspayConfigured()) {
+    if (isBranchlesspayConfigured(tenant.slug)) {
       try {
         const auditResult = await auditOrderWithBpShield({
           orderId,
@@ -198,6 +200,7 @@ router.post("/orders", async (req, res): Promise<void> => {
           })),
           ipAddress: req.ip,
           userAgent: req.headers["user-agent"],
+          tenantSlug: tenant.slug,
         });
         if (!auditResult.approved) {
           req.log.warn({ auditResult }, "Order rejected by BP Audit Shield");
@@ -221,7 +224,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     const paymentTiming = "pay_now";
     const paymentStatus = "paid";
 
-    if (!isSquareWebPaymentsConfigured()) {
+    if (!isSquareWebPaymentsConfigured(tenant.slug)) {
       res.status(503).json({
         error:
           "Online ordering is temporarily unavailable. Please call the restaurant to place your order.",
@@ -256,6 +259,8 @@ router.post("/orders", async (req, res): Promise<void> => {
         total,
         specialInstructions: input.specialInstructions,
         squarePaymentSourceId: input.squarePaymentSourceId,
+        tenantSlug: tenant.slug,
+        tenantName: tenant.name,
       });
       req.log.info(
         {
@@ -330,6 +335,7 @@ router.post("/orders", async (req, res): Promise<void> => {
             quantity: l.quantity,
           })),
           specialInstructions: input.specialInstructions,
+          tenant,
         });
         doordashTrackingUrl = ddResult.trackingUrl || null;
         doordashStatus = ddResult.status;
@@ -361,6 +367,7 @@ router.post("/orders", async (req, res): Promise<void> => {
             squareResult.squarePaymentId,
             squareResult.chargedTotalCents,
             orderId,
+            tenant.slug,
           );
           await db
             .update(ordersTable)
@@ -377,6 +384,47 @@ router.post("/orders", async (req, res): Promise<void> => {
             "Your card was charged but we could not dispatch delivery. A refund has been initiated. Please call the restaurant.",
         });
         return;
+      }
+    }
+
+    if (isBpAnchorConfigured(tenant.slug)) {
+      try {
+        const anchor = await anchorPaidOrder({
+          orderId,
+          tenantSlug: tenant.slug,
+          tenantName: tenant.name,
+          orderType: input.orderType,
+          total: chargedTotal,
+          squarePaymentId: squareResult.squarePaymentId,
+          squareOrderId: squareResult.squareOrderId,
+          customerName: customerDisplayName,
+          items: lines.map((l) => ({
+            name: l.menuItemName,
+            quantity: l.quantity,
+            unitPrice: l.unitPrice,
+          })),
+        });
+        if (anchor.ok) {
+          await db
+            .update(ordersTable)
+            .set({
+              bpAnchorId: anchor.anchorId ?? null,
+              bpContentHash: anchor.contentHash ?? null,
+              bpAnchorStatus: anchor.status ?? "queued",
+            })
+            .where(eq(ordersTable.id, orderId));
+          req.log.info(
+            { anchorId: anchor.anchorId, status: anchor.status },
+            "BP post-pay anchor queued",
+          );
+        } else {
+          req.log.error(
+            { anchor },
+            "BP post-pay anchor failed — order still paid",
+          );
+        }
+      } catch (err) {
+        req.log.error({ err }, "BP post-pay anchor threw — order still paid");
       }
     }
 
@@ -569,12 +617,18 @@ router.get("/owner/integrations", async (req, res): Promise<void> => {
   }
   res.json({
     square: {
-      configured: isSquareConfigured(),
-      webPayments: isSquareWebPaymentsConfigured(),
-      environment: process.env.SQUARE_ENVIRONMENT ?? "sandbox",
+      configured: isSquareConfigured(req.tenant?.slug),
+      webPayments: isSquareWebPaymentsConfigured(req.tenant?.slug),
+      environment:
+        process.env.SQUARE_ENVIRONMENT ??
+        process.env[`TENANT_${(req.tenant?.slug ?? "samurai").toUpperCase()}_SQUARE_ENVIRONMENT`] ??
+        "sandbox",
     },
-    doordash: { configured: isDoordashConfigured() },
-    branchlesspay: { configured: isBranchlesspayConfigured() },
+    doordash: { configured: isDoordashConfigured(req.tenant?.slug) },
+    branchlesspay: {
+      shield: isBranchlesspayConfigured(req.tenant?.slug),
+      anchor: isBpAnchorConfigured(req.tenant?.slug),
+    },
     owner: { configured: isOwnerConfigured() },
   });
 });
@@ -620,6 +674,7 @@ router.patch("/owner/orders/:id/status", async (req, res): Promise<void> => {
         await syncSquareOrderFromOwnerStatus(
           order.squareOrderId,
           status as "ready" | "completed" | "cancelled",
+          req.tenant?.slug ?? getTenantId(),
         );
       } catch (err) {
         req.log.error(

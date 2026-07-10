@@ -1,12 +1,13 @@
 /**
- * Square POS Integration — prepaid web orders only.
- *
- * Flow: CreateOrder → Charge card (Web Payments token) → Accept kitchen (RESERVED).
- * Payment MUST succeed before charge. No EXTERNAL / fake-paid payments.
+ * Square POS — prepaid web orders, credentials resolved per tenant.
+ * Flow: CreateOrder → Charge card → Accept kitchen (RESERVED).
  */
 
 import type { StructuredAddress } from "../lib/address";
-import { SQUARE_ORDER_SOURCE_NAME } from "../lib/tenant";
+import {
+  SQUARE_ORDER_SOURCE_NAME,
+  tenantSecret,
+} from "../lib/tenant";
 
 export interface SquareOrderItem {
   menuItemId: string;
@@ -32,8 +33,10 @@ export interface SquareOrderInput {
   deliveryFee?: number;
   total: number;
   specialInstructions?: string | null;
-  /** Card nonce from Square Web Payments SDK — required for every web order. */
   squarePaymentSourceId: string;
+  /** Tenant slug for secret lookup + kitchen note branding. */
+  tenantSlug: string;
+  tenantName?: string;
 }
 
 export interface SquareOrderResult {
@@ -43,33 +46,52 @@ export interface SquareOrderResult {
   chargedTotalCents: number;
 }
 
-const SQUARE_ACCESS_TOKEN = process.env.SQUARE_ACCESS_TOKEN;
-const SQUARE_LOCATION_ID = process.env.SQUARE_LOCATION_ID;
-const SQUARE_APPLICATION_ID = process.env.SQUARE_APPLICATION_ID;
-const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT ?? "sandbox";
 const SQUARE_API_VERSION = "2024-11-20";
-
-const SQUARE_BASE_URL =
-  SQUARE_ENVIRONMENT === "production"
-    ? "https://connect.squareup.com"
-    : "https://connect.squareupsandbox.com";
-
 const PREP_TIME_DURATION = "PT20M";
+
+type SquareCreds = {
+  accessToken: string;
+  locationId: string;
+  applicationId: string;
+  environment: string;
+  baseUrl: string;
+};
 
 type CatalogVariation = { id: string; version: number };
 const catalogBySku = new Map<string, CatalogVariation>();
 
-export function isSquareConfigured(): boolean {
-  return Boolean(SQUARE_ACCESS_TOKEN && SQUARE_LOCATION_ID);
+function resolveSquareCreds(slug: string): SquareCreds | null {
+  const accessToken = tenantSecret(slug, "SQUARE_ACCESS_TOKEN");
+  const locationId = tenantSecret(slug, "SQUARE_LOCATION_ID");
+  const applicationId = tenantSecret(slug, "SQUARE_APPLICATION_ID");
+  if (!accessToken || !locationId || !applicationId) return null;
+  const environment =
+    tenantSecret(slug, "SQUARE_ENVIRONMENT") ??
+    process.env.SQUARE_ENVIRONMENT ??
+    "sandbox";
+  return {
+    accessToken,
+    locationId,
+    applicationId,
+    environment,
+    baseUrl:
+      environment === "production"
+        ? "https://connect.squareup.com"
+        : "https://connect.squareupsandbox.com",
+  };
 }
 
-export function isSquareWebPaymentsConfigured(): boolean {
-  return Boolean(
-    SQUARE_APPLICATION_ID && SQUARE_ACCESS_TOKEN && SQUARE_LOCATION_ID,
-  );
+export function isSquareConfigured(slug?: string): boolean {
+  const s = slug ?? process.env.TENANT_ID?.trim() ?? "samurai";
+  const c = resolveSquareCreds(s);
+  return Boolean(c?.accessToken && c?.locationId);
 }
 
-export function getSquarePublicConfig():
+export function isSquareWebPaymentsConfigured(slug?: string): boolean {
+  return resolveSquareCreds(slug ?? process.env.TENANT_ID?.trim() ?? "samurai") !== null;
+}
+
+export function getSquarePublicConfig(slug?: string):
   | { enabled: false }
   | {
       enabled: true;
@@ -77,26 +99,26 @@ export function getSquarePublicConfig():
       locationId: string;
       environment: string;
     } {
-  if (!isSquareWebPaymentsConfigured()) {
-    return { enabled: false };
-  }
+  const c = resolveSquareCreds(slug ?? process.env.TENANT_ID?.trim() ?? "samurai");
+  if (!c) return { enabled: false };
   return {
     enabled: true,
-    applicationId: SQUARE_APPLICATION_ID!,
-    locationId: SQUARE_LOCATION_ID!,
-    environment: SQUARE_ENVIRONMENT,
+    applicationId: c.applicationId,
+    locationId: c.locationId,
+    environment: c.environment,
   };
 }
 
 async function squareRequest<T>(
+  creds: SquareCreds,
   path: string,
   init: RequestInit,
 ): Promise<T> {
-  const response = await fetch(`${SQUARE_BASE_URL}${path}`, {
+  const response = await fetch(`${creds.baseUrl}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${SQUARE_ACCESS_TOKEN}`,
+      Authorization: `Bearer ${creds.accessToken}`,
       "Square-Version": SQUARE_API_VERSION,
       ...(init.headers ?? {}),
     },
@@ -109,19 +131,20 @@ async function squareRequest<T>(
 }
 
 async function resolveCatalogVariation(
+  creds: SquareCreds,
   sku: string | null | undefined,
 ): Promise<CatalogVariation | null> {
   const trimmed = sku?.trim();
   if (!trimmed) return null;
 
-  const cacheKey = trimmed.toUpperCase();
+  const cacheKey = `${creds.locationId}:${trimmed.toUpperCase()}`;
   const cached = catalogBySku.get(cacheKey);
   if (cached) return cached;
 
   try {
     const data = await squareRequest<{
       objects?: Array<{ id: string; version: number }>;
-    }>("/v2/catalog/search", {
+    }>(creds, "/v2/catalog/search", {
       method: "POST",
       body: JSON.stringify({
         object_types: ["ITEM_VARIATION"],
@@ -148,11 +171,12 @@ async function resolveCatalogVariation(
 }
 
 async function buildSquareLineItems(
+  creds: SquareCreds,
   items: SquareOrderItem[],
 ): Promise<Array<Record<string, unknown>>> {
   return Promise.all(
     items.map(async (item) => {
-      const catalog = await resolveCatalogVariation(item.sku);
+      const catalog = await resolveCatalogVariation(creds, item.sku);
       const note = item.specialInstructions?.trim() || undefined;
 
       if (catalog) {
@@ -185,20 +209,24 @@ type SquareOrderPayload = {
   };
 };
 
-async function fetchSquareOrder(squareOrderId: string): Promise<SquareOrderPayload> {
-  return squareRequest<SquareOrderPayload>(`/v2/orders/${squareOrderId}`, {
+async function fetchSquareOrder(
+  creds: SquareCreds,
+  squareOrderId: string,
+): Promise<SquareOrderPayload> {
+  return squareRequest<SquareOrderPayload>(creds, `/v2/orders/${squareOrderId}`, {
     method: "GET",
   });
 }
 
 async function updateFulfillmentState(
+  creds: SquareCreds,
   squareOrderId: string,
   version: number,
   fulfillmentUid: string,
   state: string,
   idempotencySuffix: string,
 ): Promise<SquareOrderPayload> {
-  return squareRequest<SquareOrderPayload>(`/v2/orders/${squareOrderId}`, {
+  return squareRequest<SquareOrderPayload>(creds, `/v2/orders/${squareOrderId}`, {
     method: "PUT",
     body: JSON.stringify({
       idempotency_key: `${idempotencySuffix}-${squareOrderId}-${version}`,
@@ -211,11 +239,12 @@ async function updateFulfillmentState(
 }
 
 async function cancelSquareOrder(
+  creds: SquareCreds,
   squareOrderId: string,
   version: number,
 ): Promise<void> {
   try {
-    await squareRequest(`/v2/orders/${squareOrderId}/cancel`, {
+    await squareRequest(creds, `/v2/orders/${squareOrderId}/cancel`, {
       method: "POST",
       body: JSON.stringify({
         idempotency_key: `cancel-${squareOrderId}`,
@@ -227,9 +256,11 @@ async function cancelSquareOrder(
   }
 }
 
-/** Auto-accept → RESERVED → kitchen ticket prints. Only after successful card charge. */
-async function acceptOrderForKitchen(squareOrderId: string): Promise<void> {
-  const current = await fetchSquareOrder(squareOrderId);
+async function acceptOrderForKitchen(
+  creds: SquareCreds,
+  squareOrderId: string,
+): Promise<void> {
+  const current = await fetchSquareOrder(creds, squareOrderId);
   const fulfillment = current.order?.fulfillments?.[0];
   if (!fulfillment?.uid) {
     throw new Error("Square order has no fulfillment to accept");
@@ -240,6 +271,7 @@ async function acceptOrderForKitchen(squareOrderId: string): Promise<void> {
   }
 
   await updateFulfillmentState(
+    creds,
     squareOrderId,
     current.order.version,
     fulfillment.uid,
@@ -249,34 +281,36 @@ async function acceptOrderForKitchen(squareOrderId: string): Promise<void> {
 }
 
 async function chargeCardPayment(
+  creds: SquareCreds,
   input: SquareOrderInput,
   squareOrderId: string,
   amountCents: number,
 ): Promise<string> {
-  const data = await squareRequest<{ payment: { id: string } }>("/v2/payments", {
-    method: "POST",
-    body: JSON.stringify({
-      idempotency_key: `pay-${input.orderId}`,
-      source_id: input.squarePaymentSourceId,
-      amount_money: { amount: amountCents, currency: "USD" },
-      order_id: squareOrderId,
-      location_id: SQUARE_LOCATION_ID,
-      autocomplete: true,
-    }),
-  });
+  const data = await squareRequest<{ payment: { id: string } }>(
+    creds,
+    "/v2/payments",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        idempotency_key: `pay-${input.orderId}`,
+        source_id: input.squarePaymentSourceId,
+        amount_money: { amount: amountCents, currency: "USD" },
+        order_id: squareOrderId,
+        location_id: creds.locationId,
+        autocomplete: true,
+      }),
+    },
+  );
   return data.payment.id;
 }
 
-/**
- * Prepaid web order: CreateOrder → Charge card → Fire kitchen.
- * If card charge fails, order is cancelled and kitchen is NOT fired.
- */
 export async function sendOrderToSquare(
   input: SquareOrderInput,
 ): Promise<SquareOrderResult> {
-  if (!isSquareWebPaymentsConfigured()) {
+  const creds = resolveSquareCreds(input.tenantSlug);
+  if (!creds) {
     throw new Error(
-      "Web checkout unavailable. Set SQUARE_APPLICATION_ID, SQUARE_ACCESS_TOKEN, and SQUARE_LOCATION_ID.",
+      "Web checkout unavailable. Set SQUARE_APPLICATION_ID, SQUARE_ACCESS_TOKEN, and SQUARE_LOCATION_ID for this tenant.",
     );
   }
 
@@ -284,7 +318,8 @@ export async function sendOrderToSquare(
     throw new Error("Card payment is required. Complete the secure card form.");
   }
 
-  const lineItems = await buildSquareLineItems(input.items);
+  const brand = input.tenantName?.trim() || "Website";
+  const lineItems = await buildSquareLineItems(creds, input.items);
   if (input.deliveryFee && input.deliveryFee > 0) {
     lineItems.push({
       name: "Delivery Fee",
@@ -298,8 +333,7 @@ export async function sendOrderToSquare(
   }
   const ticketName = input.customerName.slice(0, 30);
 
-  // DoorDash Drive handles last-mile delivery. Square must use PICKUP so the
-  // order appears in Order Manager and kitchen printers (DELIVERY is beta-only).
+  // DoorDash Drive = last mile; Square uses PICKUP so POS + kitchen print work.
   const fulfillmentBase =
     input.orderType === "pickup"
       ? {
@@ -312,7 +346,7 @@ export async function sendOrderToSquare(
               display_name: input.customerName,
               phone_number: input.customerPhone,
             },
-            note: input.specialInstructions ?? "Samurai website pickup",
+            note: input.specialInstructions ?? `${brand} website pickup`,
           },
         }
       : {
@@ -337,38 +371,36 @@ export async function sendOrderToSquare(
 
   const data = await squareRequest<{
     order: { id: string; version: number; total_money?: { amount: number } };
-  }>(
-    "/v2/orders",
-    {
-      method: "POST",
-      body: JSON.stringify({
-        idempotency_key: input.orderId,
-        order: {
-          location_id: SQUARE_LOCATION_ID,
-          reference_id: input.orderId.slice(0, 40),
-          state: "OPEN",
-          ticket_name: ticketName,
-          source: { name: SQUARE_ORDER_SOURCE_NAME },
-          line_items: lineItems,
-          taxes: [
-            {
-              name: "Sales Tax",
-              percentage: "7",
-              scope: "ORDER",
-            },
-          ],
-          fulfillments: [{ ...fulfillmentBase, state: "PROPOSED" }],
-          metadata: {
-            source: "orderly-website",
-            payment_timing: "prepaid",
-            ...(input.specialInstructions
-              ? { special_instructions: input.specialInstructions }
-              : {}),
+  }>(creds, "/v2/orders", {
+    method: "POST",
+    body: JSON.stringify({
+      idempotency_key: input.orderId,
+      order: {
+        location_id: creds.locationId,
+        reference_id: input.orderId.slice(0, 40),
+        state: "OPEN",
+        ticket_name: ticketName,
+        source: { name: SQUARE_ORDER_SOURCE_NAME },
+        line_items: lineItems,
+        taxes: [
+          {
+            name: "Sales Tax",
+            percentage: "7",
+            scope: "ORDER",
           },
+        ],
+        fulfillments: [{ ...fulfillmentBase, state: "PROPOSED" }],
+        metadata: {
+          source: "orderly-website",
+          payment_timing: "prepaid",
+          tenant: input.tenantSlug,
+          ...(input.specialInstructions
+            ? { special_instructions: input.specialInstructions }
+            : {}),
         },
-      }),
-    },
-  );
+      },
+    }),
+  });
 
   const squareOrderId = data.order.id;
   const orderVersion = data.order.version;
@@ -378,18 +410,19 @@ export async function sendOrderToSquare(
   let squarePaymentId: string;
   try {
     squarePaymentId = await chargeCardPayment(
+      creds,
       input,
       squareOrderId,
       chargedTotalCents,
     );
   } catch (err) {
-    await cancelSquareOrder(squareOrderId, orderVersion);
+    await cancelSquareOrder(creds, squareOrderId, orderVersion);
     const message =
       err instanceof Error ? err.message : "Card payment was declined";
     throw new Error(`Payment failed: ${message}`);
   }
 
-  await acceptOrderForKitchen(squareOrderId);
+  await acceptOrderForKitchen(creds, squareOrderId);
 
   return {
     squareOrderId,
@@ -407,18 +440,17 @@ const FULFILLMENT_STATE: Record<OwnerFulfillmentSync, string> = {
   cancelled: "CANCELED",
 };
 
-/**
- * Sync owner dashboard status → Square fulfillment so paid orders leave "In progress".
- * completed → COMPLETED (order hilang dari Active di kasir Square).
- */
 export async function syncSquareOrderFromOwnerStatus(
   squareOrderId: string,
   status: OwnerFulfillmentSync,
+  tenantSlug?: string,
 ): Promise<void> {
-  if (!isSquareConfigured()) return;
+  const slug = tenantSlug ?? process.env.TENANT_ID?.trim() ?? "samurai";
+  const creds = resolveSquareCreds(slug);
+  if (!creds) return;
 
   const targetState = FULFILLMENT_STATE[status];
-  const current = await fetchSquareOrder(squareOrderId);
+  const current = await fetchSquareOrder(creds, squareOrderId);
   const fulfillment = current.order?.fulfillments?.[0];
   if (!fulfillment?.uid) return;
 
@@ -436,22 +468,24 @@ export async function syncSquareOrderFromOwnerStatus(
     (body.order as Record<string, unknown>).state = "COMPLETED";
   }
 
-  await squareRequest(`/v2/orders/${squareOrderId}`, {
+  await squareRequest(creds, `/v2/orders/${squareOrderId}`, {
     method: "PUT",
     body: JSON.stringify(body),
   });
 }
 
-/** Refund card charge when DoorDash dispatch fails after payment. */
 export async function refundSquarePayment(
   squarePaymentId: string,
   amountCents: number,
   orderId: string,
+  tenantSlug?: string,
 ): Promise<void> {
-  if (!SQUARE_ACCESS_TOKEN || !SQUARE_LOCATION_ID) {
+  const slug = tenantSlug ?? process.env.TENANT_ID?.trim() ?? "samurai";
+  const creds = resolveSquareCreds(slug);
+  if (!creds) {
     throw new Error("Square not configured for refund");
   }
-  await squareRequest("/v2/refunds", {
+  await squareRequest(creds, "/v2/refunds", {
     method: "POST",
     body: JSON.stringify({
       idempotency_key: `refund-${orderId}`,

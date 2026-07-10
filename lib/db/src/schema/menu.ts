@@ -46,6 +46,9 @@ export const ordersTable = pgTable("orders", {
   doordashTrackingUrl: text("doordash_tracking_url"),
   doordashStatus: text("doordash_status"),
   estimatedDropoffTime: text("estimated_dropoff_time"),
+  bpAnchorId: text("bp_anchor_id"),
+  bpContentHash: text("bp_content_hash"),
+  bpAnchorStatus: text("bp_anchor_status"),
   specialInstructions: text("special_instructions"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
