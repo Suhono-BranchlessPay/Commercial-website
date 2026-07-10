@@ -41,6 +41,7 @@ git clone --depth 1 "$REPO" "$TMP"
       "artifacts/samurai-resto/src/components/layout.tsx" \
       "artifacts/samurai-resto/src/App.tsx" \
       "artifacts/samurai-resto/src/lib/tenant.tsx" \
+      "artifacts/samurai-resto/public/kirin-logo.png" \
       "artifacts/samurai-resto/src/pages/order.tsx" \
       "artifacts/samurai-resto/src/pages/account.tsx" \
       "artifacts/samurai-resto/src/lib/checkoutStorage.ts" \

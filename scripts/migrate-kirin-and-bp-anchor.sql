@@ -5,39 +5,50 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS bp_anchor_id text;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS bp_content_hash text;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS bp_anchor_status text;
 
--- Tenant #2: Kirin — distinct theme (emerald/gold), separate domain.
--- Update address/coords/phone when real Kirin location credentials are ready.
+-- Tenant #2: Kirin Hibachi Express — Henderson, KY
+-- Domain: kirinhibachiexpress.com
 -- Secrets: TENANT_KIRIN_SQUARE_*, TENANT_KIRIN_DOORDASH_*, TENANT_KIRIN_BRANCHLESSPAY_LICENSE_KEY
 INSERT INTO tenants (
   id, slug, name, domain,
+  logo_url,
   address, city, state, postcode, lat, lng,
   service_area_radius, pickup_phone, pickup_business_name,
   theme, status
 ) VALUES (
   'kirin',
   'kirin',
-  'Kirin Hibachi',
-  'kirinhibachi.com',
-  'TBD — set real street',
-  'Martinsville',
-  'IN',
-  '46151',
-  39.43,
-  -86.42,
+  'Kirin Hibachi Express',
+  'kirinhibachiexpress.com',
+  '/kirin-logo.png',
+  '2278 S Green St',
+  'Henderson',
+  'KY',
+  '42420',
+  37.78751,
+  -87.40068,
   12,
   NULL,
-  'Kirin Hibachi',
+  'Kirin Hibachi Express',
   '{
-    "primary": "160 84% 32%",
-    "secondary": "43 90% 48%",
-    "accent": "160 30% 8%",
-    "brandName": "Kirin Hibachi",
-    "logoUrl": null
+    "primary": "0 72% 38%",
+    "secondary": "40 30% 88%",
+    "accent": "0 0% 5%",
+    "brandName": "Kirin Hibachi Express",
+    "logoUrl": "/kirin-logo.png"
   }'::jsonb,
   'active'
 )
 ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
   domain = EXCLUDED.domain,
+  logo_url = EXCLUDED.logo_url,
+  address = EXCLUDED.address,
+  city = EXCLUDED.city,
+  state = EXCLUDED.state,
+  postcode = EXCLUDED.postcode,
+  lat = EXCLUDED.lat,
+  lng = EXCLUDED.lng,
+  service_area_radius = EXCLUDED.service_area_radius,
+  pickup_business_name = EXCLUDED.pickup_business_name,
   theme = EXCLUDED.theme,
-  pickup_business_name = EXCLUDED.pickup_business_name;
+  status = EXCLUDED.status;
