@@ -27,16 +27,23 @@ done
 # Never let public/src exist (steals /src/* asset resolution)
 rm -rf "$ROOT/artifacts/samurai-resto/public/src"
 
+# Preserve server-only brand assets (logo/og) across --delete sync
+BRAND_BAK=$(mktemp -d)
+mkdir -p "$BRAND_BAK"
+for f in kirin-logo.png kirin-og.jpg kirin-hero.jpg opengraph.jpg og-image.jpg samurai-logo.png; do
+  if [ -f "$ROOT/artifacts/samurai-resto/public/$f" ]; then
+    cp -a "$ROOT/artifacts/samurai-resto/public/$f" "$BRAND_BAK/"
+  fi
+done
+
 rsync -a --delete \
   --exclude dist \
   --exclude node_modules \
   "$SRC/artifacts/samurai-resto/" "$ROOT/artifacts/samurai-resto/"
 
-# Keep live public brand assets if present in ROOT but not in repo
-# (kirin-logo.png etc. may only exist on server)
-if [ -f "$ROOT/artifacts/samurai-resto/public/kirin-logo.png" ] || true; then
-  :
-fi
+# Restore brand assets
+cp -an "$BRAND_BAK"/* "$ROOT/artifacts/samurai-resto/public/" 2>/dev/null || true
+rm -rf "$BRAND_BAK"
 
 echo "==> URL audit in index.html"
 python3 - <<'PY'
