@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 
 export const menuCategoriesTable = pgTable("menu_categories", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull().default("samurai"),
   name: text("name").notNull(),
   description: text("description"),
   sortOrder: integer("sort_order").notNull().default(0),
@@ -11,7 +12,8 @@ export const menuCategoriesTable = pgTable("menu_categories", {
 
 export const menuItemsTable = pgTable("menu_items", {
   id: text("id").primaryKey(),
-  sku: text("sku").notNull().unique(),
+  tenantId: text("tenant_id").notNull().default("samurai"),
+  sku: text("sku").notNull(),
   name: text("name").notNull(),
   description: text("description"),
   category: text("category").notNull(),
@@ -23,7 +25,7 @@ export const menuItemsTable = pgTable("menu_items", {
 
 export const ordersTable = pgTable("orders", {
   id: text("id").primaryKey(),
-  tenantId: text("tenant_id").notNull().default("default"),
+  tenantId: text("tenant_id").notNull().default("samurai"),
   customerId: text("customer_id"),
   addressId: text("address_id"),
   customerName: text("customer_name").notNull(),

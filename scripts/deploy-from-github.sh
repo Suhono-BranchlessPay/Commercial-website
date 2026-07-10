@@ -3,7 +3,7 @@
 set -eu
 
 APP_ROOT="${1:-/var/www/samurai-resto}"
-REPO="https://github.com/Suhono-BranchlessPay/Commercial-website.git"
+REPO="https://github.com/Suhono-BranchlessPay/orderly-platform.git"
 TMP="/tmp/commercial-website-src"
 
 echo "==> Clone GitHub repo"

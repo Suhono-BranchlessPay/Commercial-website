@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import { menuItemsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   createDeliveryQuote,
   isDoordashConfigured,
@@ -12,6 +12,7 @@ import {
   OUT_OF_RADIUS_MESSAGE,
   structuredAddressSchema,
 } from "../lib/address";
+import { getTenantId } from "../lib/tenant";
 
 const router = Router();
 
@@ -47,7 +48,17 @@ router.post("/delivery/quote", async (req, res): Promise<void> => {
 
   const input = parsed.data;
 
-  if (!isWithinDeliveryRadius(input.address.lat, input.address.lng)) {
+  const tenant = req.tenant;
+  const tenantId = tenant?.id ?? getTenantId();
+  if (
+    !isWithinDeliveryRadius(
+      input.address.lat,
+      input.address.lng,
+      tenant?.serviceAreaRadius,
+      tenant?.lat,
+      tenant?.lng,
+    )
+  ) {
     res.status(400).json({ error: OUT_OF_RADIUS_MESSAGE });
     return;
   }
@@ -59,7 +70,12 @@ router.post("/delivery/quote", async (req, res): Promise<void> => {
     const rows = await db
       .select()
       .from(menuItemsTable)
-      .where(eq(menuItemsTable.id, item.menuItemId));
+      .where(
+        and(
+          eq(menuItemsTable.id, item.menuItemId),
+          eq(menuItemsTable.tenantId, tenantId),
+        ),
+      );
     const price = rows[0]?.price ?? 0;
     subtotal += price * item.quantity;
   }

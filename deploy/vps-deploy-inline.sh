@@ -4,7 +4,7 @@ ROOT="${1:-/var/www/samurai-resto}"
 API="$ROOT/artifacts/api-server"
 WEB="$ROOT/artifacts/samurai-resto"
 TMP="/tmp/samurai-deploy-src"
-REPO="https://github.com/Suhono-BranchlessPay/Commercial-website.git"
+REPO="https://github.com/Suhono-BranchlessPay/orderly-platform.git"
 
 echo "==> Deploy prepaid payments (git clone, no curl raw)"
 cd "$ROOT"
@@ -23,15 +23,19 @@ git clone --depth 1 "$REPO" "$TMP"
       "artifacts/api-server/src/lib/phone.ts" \
       "artifacts/api-server/src/lib/address.ts" \
       "artifacts/api-server/src/lib/customers.ts" \
+      "artifacts/api-server/src/middleware/tenant.ts" \
+      "artifacts/api-server/src/app.ts" \
       "artifacts/api-server/src/routes/orders.ts" \
       "artifacts/api-server/src/routes/square.ts" \
       "artifacts/api-server/src/routes/delivery.ts" \
       "artifacts/api-server/src/routes/config.ts" \
       "artifacts/api-server/src/routes/customers.ts" \
+      "artifacts/api-server/src/routes/menu.ts" \
       "artifacts/api-server/src/routes/webhooks.ts" \
       "artifacts/api-server/src/routes/index.ts" \
       "lib/db/src/schema/menu.ts" \
       "lib/db/src/schema/customers.ts" \
+      "lib/db/src/schema/tenants.ts" \
       "lib/db/src/schema/index.ts" \
       "artifacts/samurai-resto/src/pages/order.tsx" \
       "artifacts/samurai-resto/src/pages/account.tsx" \
@@ -43,7 +47,8 @@ git clone --depth 1 "$REPO" "$TMP"
       "lib/api-zod/src/generated/types/order.ts" \
       "lib/api-zod/src/generated/types/structuredAddress.ts" \
       "lib/api-client-react/src/generated/api.schemas.ts" \
-      "scripts/migrate-customer-foundation.sql"
+      "scripts/migrate-customer-foundation.sql" \
+      "scripts/migrate-multi-tenant-foundation.sql"
 do
   mkdir -p "$(dirname "$ROOT/$f")"
   cp "$TMP/$f" "$ROOT/$f"
@@ -67,6 +72,7 @@ if [ -n "$DBURL" ]; then
   psql "$DBURL" -c "ALTER TABLE orders ADD COLUMN IF NOT EXISTS doordash_status text;" || true
   psql "$DBURL" -c "ALTER TABLE orders ADD COLUMN IF NOT EXISTS estimated_dropoff_time text;" || true
   psql "$DBURL" -f "$TMP/scripts/migrate-customer-foundation.sql" || true
+  psql "$DBURL" -f "$TMP/scripts/migrate-multi-tenant-foundation.sql" || true
 fi
 
 echo "==> Build API"

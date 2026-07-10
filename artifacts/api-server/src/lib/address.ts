@@ -60,9 +60,11 @@ export function isWithinDeliveryRadius(
   lat: number,
   lng: number,
   radiusMiles: number = DELIVERY_RADIUS_MILES,
+  restaurantLat: number = RESTAURANT_LAT,
+  restaurantLng: number = RESTAURANT_LNG,
 ): boolean {
   return (
-    distanceMiles(RESTAURANT_LAT, RESTAURANT_LNG, lat, lng) <= radiusMiles
+    distanceMiles(restaurantLat, restaurantLng, lat, lng) <= radiusMiles
   );
 }
 

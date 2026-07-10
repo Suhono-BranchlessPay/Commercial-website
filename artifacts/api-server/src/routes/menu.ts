@@ -5,17 +5,24 @@ import multer from "multer";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import { menuCategoriesTable, menuItemsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { UPLOADS_DIR } from "../lib/uploads";
 import { checkPin } from "../lib/ownerAuth";
+import { getTenantId } from "../lib/tenant";
 
 const router = Router();
 
+function tenantIdOf(req: { tenant?: { id: string } }): string {
+  return req.tenant?.id ?? getTenantId();
+}
+
 router.get("/menu/categories", async (req, res) => {
   try {
+    const tenantId = tenantIdOf(req);
     const categories = await db
       .select()
       .from(menuCategoriesTable)
+      .where(eq(menuCategoriesTable.tenantId, tenantId))
       .orderBy(menuCategoriesTable.sortOrder);
     res.json(categories);
   } catch (err) {
@@ -26,15 +33,24 @@ router.get("/menu/categories", async (req, res) => {
 
 router.get("/menu/items", async (req, res) => {
   try {
+    const tenantId = tenantIdOf(req);
     const category = req.query["category"] as string | undefined;
     let items;
     if (category) {
       items = await db
         .select()
         .from(menuItemsTable)
-        .where(eq(menuItemsTable.category, category));
+        .where(
+          and(
+            eq(menuItemsTable.tenantId, tenantId),
+            eq(menuItemsTable.category, category),
+          ),
+        );
     } else {
-      items = await db.select().from(menuItemsTable);
+      items = await db
+        .select()
+        .from(menuItemsTable)
+        .where(eq(menuItemsTable.tenantId, tenantId));
     }
     res.json(items);
   } catch (err) {
@@ -45,10 +61,16 @@ router.get("/menu/items", async (req, res) => {
 
 router.get("/menu/featured", async (req, res) => {
   try {
+    const tenantId = tenantIdOf(req);
     const items = await db
       .select()
       .from(menuItemsTable)
-      .where(eq(menuItemsTable.featured, true));
+      .where(
+        and(
+          eq(menuItemsTable.tenantId, tenantId),
+          eq(menuItemsTable.featured, true),
+        ),
+      );
     res.json(items);
   } catch (err) {
     req.log.error({ err }, "Failed to get featured items");
@@ -93,12 +115,14 @@ router.patch("/owner/menu/items/:id", async (req, res): Promise<void> => {
   }
   try {
     const { id } = req.params;
+    const tenantId = tenantIdOf(req);
     const parsed = updateMenuItemSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: "Invalid menu item data" });
       return;
     }
-    const { name, description, price, category, available, featured } = parsed.data;
+    const { name, description, price, category, available, featured } =
+      parsed.data;
     if (
       name === undefined &&
       description === undefined &&
@@ -114,7 +138,9 @@ router.patch("/owner/menu/items/:id", async (req, res): Promise<void> => {
     const [existing] = await db
       .select()
       .from(menuItemsTable)
-      .where(eq(menuItemsTable.id, id));
+      .where(
+        and(eq(menuItemsTable.id, id), eq(menuItemsTable.tenantId, tenantId)),
+      );
 
     if (!existing) {
       res.status(404).json({ error: "Menu item not found" });
@@ -131,7 +157,9 @@ router.patch("/owner/menu/items/:id", async (req, res): Promise<void> => {
         ...(available !== undefined && { available }),
         ...(featured !== undefined && { featured }),
       })
-      .where(eq(menuItemsTable.id, id))
+      .where(
+        and(eq(menuItemsTable.id, id), eq(menuItemsTable.tenantId, tenantId)),
+      )
       .returning();
 
     res.json(updated);
@@ -153,7 +181,9 @@ router.post(
   (req, res, next) => {
     upload.single("image")(req, res, (err) => {
       if (err) {
-        res.status(400).json({ error: err instanceof Error ? err.message : "Upload failed" });
+        res.status(400).json({
+          error: err instanceof Error ? err.message : "Upload failed",
+        });
         return;
       }
       next();
@@ -162,6 +192,7 @@ router.post(
   async (req, res): Promise<void> => {
     try {
       const { id } = req.params;
+      const tenantId = tenantIdOf(req);
       if (!req.file) {
         res.status(400).json({ error: "No image file provided" });
         return;
@@ -170,7 +201,9 @@ router.post(
       const [existing] = await db
         .select()
         .from(menuItemsTable)
-        .where(eq(menuItemsTable.id, id));
+        .where(
+          and(eq(menuItemsTable.id, id), eq(menuItemsTable.tenantId, tenantId)),
+        );
 
       if (!existing) {
         res.status(404).json({ error: "Menu item not found" });
@@ -182,7 +215,9 @@ router.post(
       const [updated] = await db
         .update(menuItemsTable)
         .set({ imageUrl })
-        .where(eq(menuItemsTable.id, id))
+        .where(
+          and(eq(menuItemsTable.id, id), eq(menuItemsTable.tenantId, tenantId)),
+        )
         .returning();
 
       res.json(updated);

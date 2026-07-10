@@ -4,6 +4,7 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { UPLOADS_ROOT } from "./lib/uploads";
+import { tenantMiddleware } from "./middleware/tenant";
 
 const app: Express = express();
 
@@ -31,6 +32,6 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api/uploads", express.static(UPLOADS_ROOT));
-app.use("/api", router);
+app.use("/api", tenantMiddleware, router);
 
 export default app;

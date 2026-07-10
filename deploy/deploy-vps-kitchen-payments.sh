@@ -6,7 +6,7 @@ set -eu
 ROOT="${1:-/var/www/samurai-resto}"
 API="$ROOT/artifacts/api-server"
 WEB="$ROOT/artifacts/samurai-resto"
-REPO="${SAMURAI_GITHUB_REPO:-https://github.com/Suhono-BranchlessPay/Commercial-website.git}"
+REPO="${SAMURAI_GITHUB_REPO:-https://github.com/Suhono-BranchlessPay/orderly-platform.git}"
 TMP="/tmp/samurai-deploy-src"
 
 echo "==> Samurai deploy: prepaid card payments only (no EXTERNAL)"

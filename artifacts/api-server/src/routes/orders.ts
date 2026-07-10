@@ -5,7 +5,7 @@ import {
   orderLinesTable,
   menuItemsTable,
 } from "@workspace/db";
-import { eq, gte, desc } from "drizzle-orm";
+import { and, eq, gte, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { z } from "zod";
 import { checkPin } from "../lib/ownerAuth";
@@ -68,7 +68,8 @@ router.post("/orders", async (req, res): Promise<void> => {
   }
 
   const input = parsed.data;
-  const tenantId = getTenantId();
+  const tenant = req.tenant;
+  const tenantId = tenant?.id ?? getTenantId();
   const customerDisplayName = displayName(input.firstName, input.lastName);
 
   try {
@@ -77,7 +78,15 @@ router.post("/orders", async (req, res): Promise<void> => {
         res.status(400).json({ error: "Delivery address is required" });
         return;
       }
-      if (!isWithinDeliveryRadius(input.address.lat, input.address.lng)) {
+      if (
+        !isWithinDeliveryRadius(
+          input.address.lat,
+          input.address.lng,
+          tenant?.serviceAreaRadius,
+          tenant?.lat,
+          tenant?.lng,
+        )
+      ) {
         res.status(400).json({ error: OUT_OF_RADIUS_MESSAGE });
         return;
       }
@@ -92,7 +101,12 @@ router.post("/orders", async (req, res): Promise<void> => {
       const rows = await db
         .select()
         .from(menuItemsTable)
-        .where(eq(menuItemsTable.id, id));
+        .where(
+          and(
+            eq(menuItemsTable.id, id),
+            eq(menuItemsTable.tenantId, tenantId),
+          ),
+        );
       if (rows[0]) {
         menuItemMap[id] = {
           name: rows[0].name,
@@ -423,11 +437,14 @@ router.post("/orders", async (req, res): Promise<void> => {
 
 router.get("/orders/:id", async (req, res): Promise<void> => {
   const { id } = req.params;
+  const tenantId = req.tenant?.id ?? getTenantId();
   try {
     const order = await db
       .select()
       .from(ordersTable)
-      .where(eq(ordersTable.id, id));
+      .where(
+        and(eq(ordersTable.id, id), eq(ordersTable.tenantId, tenantId)),
+      );
     if (!order[0]) {
       res.status(404).json({ error: "Order not found" });
       return;
@@ -464,7 +481,12 @@ router.post("/account/orders", async (req, res): Promise<void> => {
         const rows = await db
           .select()
           .from(ordersTable)
-          .where(eq(ordersTable.id, id))
+          .where(
+            and(
+              eq(ordersTable.id, id),
+              eq(ordersTable.tenantId, req.tenant?.id ?? getTenantId()),
+            ),
+          )
           .limit(1);
         const order = rows[0];
         if (!order) return null;
@@ -495,18 +517,25 @@ router.get("/owner/stats", async (req, res): Promise<void> => {
     return;
   }
   try {
+    const tenantId = req.tenant?.id ?? getTenantId();
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
     const todayOrders = await db
       .select()
       .from(ordersTable)
-      .where(gte(ordersTable.createdAt, todayStart))
+      .where(
+        and(
+          eq(ordersTable.tenantId, tenantId),
+          gte(ordersTable.createdAt, todayStart),
+        ),
+      )
       .orderBy(desc(ordersTable.createdAt));
 
     const recentOrders = await db
       .select()
       .from(ordersTable)
+      .where(eq(ordersTable.tenantId, tenantId))
       .orderBy(desc(ordersTable.createdAt))
       .limit(20);
 
@@ -562,10 +591,16 @@ router.patch("/owner/orders/:id/status", async (req, res): Promise<void> => {
     return;
   }
   try {
+    const tenantId = req.tenant?.id ?? getTenantId();
     const rows = await db
       .select()
       .from(ordersTable)
-      .where(eq(ordersTable.id, req.params.id));
+      .where(
+        and(
+          eq(ordersTable.id, req.params.id),
+          eq(ordersTable.tenantId, tenantId),
+        ),
+      );
     const order = rows[0];
     if (!order) {
       res.status(404).json({ error: "Order not found" });
