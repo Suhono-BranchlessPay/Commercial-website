@@ -63,11 +63,13 @@ UPDATE tenants SET
     },
 
     "layout": {
-      "hero_variant": "hero-split",
+      "hero_variant": "HeroSplit",
+      "featured_variant": "BigCards",
       "menu_variant": "menu-list",
-      "nav_variant": "nav-solid-dark",
-      "footer_variant": "footer-compact",
-      "featured_variant": "featured-wide",
+      "story_variant": "StorySplit",
+      "cta_variant": "BannerAccent",
+      "nav_variant": "NavSolid",
+      "footer_variant": "FooterLight",
       "section_style": "textured",
       "sections": [
         "hero",

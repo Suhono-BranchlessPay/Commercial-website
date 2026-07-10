@@ -1,0 +1,83 @@
+INSTRUKSI UNTUK VERRY — INTEGRASI VARIAN DESAIN (DARI REPLIT) KE SISTEM MULTI-TENANT
+=====================================================================================
+
+KONTEKS & PEMBAGIAN KERJA (keputusan Malik):
+Kerja bagus pada multi-tenant, isolasi data, meta server-side per host, dan halaman Kirin
+yang sudah TIDAK identik lagi (headline & struktur beda). Itu progres besar.
+
+Malik memutuskan MEMISAHKAN pekerjaan berdasarkan kekuatan:
+- DESAIN halaman depan (varian layout, tampilan) -> dikerjakan Replit (lebih cepat untuk desain).
+- BACKEND, integrasi, sistem tenant, deploy -> tetap kamu (Verry) — ini kekuatanmu.
+
+Replit akan menghasilkan LIBRARY VARIAN LAYOUT (komponen React config-driven) + demo, lalu
+push ke GitHub repo `orderly-platform`. TUGASMU: integrasikan varian itu ke sistem multi-tenant
+& backend yang sudah ada.
+
+=====================================================================================
+PENTING — JAGA ARSITEKTUR (jangan sampai split ini merusak multi-tenant)
+=====================================================================================
+- Varian dari Replit HARUS config-driven (baca data dari config tenant), BUKAN situs statis
+  per restoran. Kalau Replit mengirim sesuatu yang hardcode/statis untuk satu restoran,
+  refactor jadi komponen yang membaca config tenant SEBELUM dipakai.
+- Tetap SATU codebase multi-tenant. Varian = pilihan tampilan yang tiap tenant pilih via config.
+- Menambah restoran = isi config (theme + pilihan varian + konten + foto), TANPA kode baru.
+
+=====================================================================================
+TUGASMU (integrasi)
+=====================================================================================
+1. TERIMA library varian dari GitHub (komponen: Hero* , Featured* , Story* , CTA* , Nav*, Footer*,
+   + PageRenderer yang merender `sections` dari config).
+
+2. SAMBUNGKAN KE DATA TENANT (yang sudah ada di DB):
+   - Petakan config tenant -> bentuk yang PageRenderer butuh:
+     { theme, sections:[{type,variant,data}], nav, footer }
+   - `data` tiap section diisi dari DB/tenant: headline, copy, story, stats, menu items
+     (dari Square catalog tenant), foto (dari aset tenant), kontak, dsb.
+   - Menu items dari Square catalog tenant (kalau kosong -> state "coming soon" yang rapi).
+
+3. SIMPAN PILIHAN VARIAN & KONTEN DI CONFIG TENANT:
+   - Tambahkan ke `tenants` (atau tabel terkait): pilihan varian per section + urutan section +
+     copy/headline + referensi foto. Ini "Identity Pack" tiap tenant (Claude akan buatkan
+     isinya per restoran; kamu sediakan tempat & mekanismenya).
+   - Contoh: Kirin -> [Hero=HeroSplit, Featured=BigCards, Story=StorySplit, CTA=BannerDark]
+             Samurai -> kombinasi berbeda. Dua tenant TIDAK sama.
+
+4. RENDER SERVER-SIDE (jaga yang sudah benar):
+   - Meta/SEO tetap per host server-side (sudah beres — jangan regresi).
+   - Storefront dirender dari config tenant sesuai host.
+
+5. ISOLASI & KEAMANAN (jaga yang sudah benar):
+   - Data/menu/foto per tenant tetap terisolasi. Foto tenant A tidak dipakai tenant B.
+   - Kredensial tetap di secrets.
+
+=====================================================================================
+ALUR KERJA KE DEPAN (biar jelas peran tiap pihak)
+=====================================================================================
+- Malik kirim detail restoran ke Claude -> Claude hasilkan "Identity Pack" (pilihan varian +
+  warna + font + headline/copy + urutan section + kebutuhan foto).
+- Identity Pack diisi ke config tenant (kamu sediakan mekanismenya; bisa manual dulu).
+- Replit sesekali menambah VARIAN BARU (komponen) kalau perlu gaya baru -> push ke GitHub ->
+  kamu integrasi sebagai pilihan varian baru.
+- Kamu (Verry) TIDAK mendesain tiap situs manual. Kamu bangun MEKANISME: config -> render.
+
+=====================================================================================
+VERIFIKASI (Definition of Done)
+=====================================================================================
+[ ] PageRenderer + varian dari Replit terintegrasi; storefront dirender dari config tenant.
+[ ] Tiap section membaca DATA dari tenant (bukan hardcode); menu dari Square catalog tenant.
+[ ] Pilihan varian + urutan section + copy tersimpan per tenant di config/DB.
+[ ] Samurai & Kirin memakai kombinasi varian & konten BERBEDA (bukan cuma warna).
+[ ] Tambah 1 tenant demo baru dari config saja -> tampil beda, tanpa menulis kode.
+[ ] Foto per tenant terisolasi (tidak ada foto dipakai bersama).
+[ ] Meta server-side per host tetap benar (tidak regresi).
+[ ] Menu kosong -> state "coming soon" rapi (bukan berantakan).
+
+=====================================================================================
+CATATAN
+=====================================================================================
+- Kalau ada gesekan antara kode Replit dan arsitekturmu, prioritas = arsitektur multi-tenant
+  yang benar. Refactor kode Replit agar config-driven bila perlu.
+- Koordinasi via GitHub: Replit push varian -> kamu review & integrasi (branch protection + review).
+- Tujuan: Orderly seperti Shopify — mekanisme render dari config; desain (varian) bisa terus
+  ditambah; tiap restoran unik tanpa kode baru.
+Terima kasih.

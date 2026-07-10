@@ -13,11 +13,13 @@ UPDATE tenants SET
   "ratingValue": "4.9",
   "reviewCount": "2300",
   "layout": {
-    "hero_variant": "hero-fullimage-bold",
+    "hero_variant": "HeroFullImage",
+    "featured_variant": "CardGrid",
     "menu_variant": "menu-grid",
-    "nav_variant": "nav-minimal-light",
-    "footer_variant": "footer-classic",
-    "featured_variant": "featured-grid",
+    "story_variant": "StoryCentered",
+    "cta_variant": "BannerDark",
+    "nav_variant": "NavSolid",
+    "footer_variant": "FooterDark",
     "section_style": "clean",
     "sections": ["hero", "menu_download", "featured", "reviews", "story"]
   },

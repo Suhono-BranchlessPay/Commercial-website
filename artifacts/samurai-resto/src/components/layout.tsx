@@ -1,4 +1,5 @@
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
+import { useMemo } from "react";
 import { useCart } from "@/lib/cart";
 import { useTenant } from "@/lib/tenant";
 import { Button } from "@/components/ui/button";
@@ -9,9 +10,10 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { Separator } from "@/components/ui/separator";
-import { Minus, Plus, ShoppingBag, Trash2, Menu as MenuIcon } from "lucide-react";
-import { useState } from "react";
+import { Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
+import { useGetFeaturedItems } from "@workspace/api-client-react";
+import { buildTenantPageConfig } from "@/lib/buildTenantPageConfig";
+import { StorefrontFooter, StorefrontNav } from "@/variants/PageRenderer";
 
 export function CartDrawer() {
   const { items, isCartOpen, setIsCartOpen, updateQuantity, removeItem, cartTotal } =
@@ -106,136 +108,59 @@ export function CartDrawer() {
   );
 }
 
-const NAV_LINKS = [
-  { href: "/", label: "Home" },
-  { href: "/menu", label: "Menu" },
-  { href: "/catering", label: "Catering" },
-  { href: "/account", label: "My Orders" },
-  { href: "/order", label: "Order Online" },
-];
-
 export function Layout({ children }: { children: React.ReactNode }) {
   const { cartCount, cartTotal, setIsCartOpen } = useCart();
   const {
+    tenant,
     brandName,
     logoSrc,
     phoneDisplay,
-    phoneTel,
-    addressLine,
-    cityLine,
-    weeklyHours,
+    fullAddress,
+    mapsSearchUrl,
     storefront,
   } = useTenant();
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [location] = useLocation();
+  const { data: featuredItems } = useGetFeaturedItems();
 
-  const mapsQuery = encodeURIComponent(`${addressLine} ${cityLine}`.trim());
-  const navMinimal = storefront.navVariant === "nav-minimal-light";
-  const footerCompact = storefront.footerVariant === "footer-compact";
-
-  const headerClass = navMinimal
-    ? "sticky top-0 z-50 w-full border-b border-border bg-background"
-    : "sticky top-0 z-50 w-full border-b border-primary/30 bg-accent text-accent-foreground";
-
-  const linkIdle = navMinimal
-    ? "text-muted-foreground hover:text-primary"
-    : "text-accent-foreground/70 hover:text-primary";
-  const linkActive = navMinimal ? "text-primary" : "text-primary";
+  const pageConfig = useMemo(
+    () =>
+      buildTenantPageConfig({
+        tenantId: tenant?.tenantId || "unknown",
+        brandName,
+        logoSrc,
+        phoneDisplay,
+        fullAddress,
+        mapsSearchUrl,
+        cartCount,
+        storefront,
+        theme: (tenant?.theme ?? null) as Record<string, unknown> | null,
+        featuredItems: featuredItems as
+          | {
+              id: string;
+              name: string;
+              description?: string | null;
+              price: number;
+              imageUrl?: string | null;
+              featured?: boolean;
+            }[]
+          | undefined,
+      }),
+    [
+      tenant?.tenantId,
+      tenant?.theme,
+      brandName,
+      logoSrc,
+      phoneDisplay,
+      fullAddress,
+      mapsSearchUrl,
+      cartCount,
+      storefront,
+      featuredItems,
+    ],
+  );
 
   return (
     <div className="min-h-[100dvh] flex flex-col bg-background selection:bg-primary/20">
-      <header className={headerClass}>
-        <div className="container mx-auto px-4 h-20 flex items-center justify-between">
-          <Link href="/" className="flex items-center">
-            <img src={logoSrc} alt={brandName} className="h-16 w-auto" />
-          </Link>
-
-          <nav className="hidden md:flex items-center gap-8">
-            {NAV_LINKS.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={`text-sm font-medium tracking-wide uppercase transition-colors ${
-                  location === link.href ? linkActive : linkIdle
-                }`}
-              >
-                {link.label}
-              </Link>
-            ))}
-            <Button
-              variant="outline"
-              className={
-                navMinimal
-                  ? "gap-2 border-primary text-primary hover:bg-primary hover:text-primary-foreground"
-                  : "gap-2 border-primary/60 text-primary hover:bg-primary hover:text-white"
-              }
-              onClick={() => setIsCartOpen(true)}
-            >
-              <ShoppingBag className="h-4 w-4" />
-              <span>Cart ({cartCount})</span>
-            </Button>
-          </nav>
-
-          <div className="flex items-center gap-4 md:hidden">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={navMinimal ? "relative text-foreground" : "relative text-accent-foreground"}
-              onClick={() => setIsCartOpen(true)}
-            >
-              <ShoppingBag className="h-5 w-5" />
-              {cartCount > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                  {cartCount}
-                </span>
-              )}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={navMinimal ? "" : "text-accent-foreground"}
-              onClick={() => setIsMobileMenuOpen(true)}
-            >
-              <MenuIcon className="h-6 w-6" />
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
-        <SheetContent side="right" className="w-[300px] sm:w-[400px]">
-          <SheetHeader className="text-left">
-            <SheetTitle asChild>
-              <img src={logoSrc} alt={brandName} className="h-16 w-auto" />
-            </SheetTitle>
-          </SheetHeader>
-          <div className="flex flex-col gap-6 mt-8">
-            {NAV_LINKS.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={`text-xl font-serif transition-colors hover:text-primary ${
-                  location === link.href ? "text-primary" : "text-foreground"
-                }`}
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                {link.label}
-              </Link>
-            ))}
-            <Separator />
-            <Button
-              className="w-full justify-start text-lg h-14 bg-primary text-primary-foreground"
-              onClick={() => {
-                setIsMobileMenuOpen(false);
-                setIsCartOpen(true);
-              }}
-            >
-              <ShoppingBag className="mr-2 h-5 w-5" />
-              View Cart ({cartCount})
-            </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
+      <StorefrontNav config={pageConfig} onCartClick={() => setIsCartOpen(true)} />
 
       <CartDrawer />
 
@@ -265,105 +190,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </button>
       )}
 
-      {footerCompact ? (
-        <footer className="bg-card border-t border-border py-10">
-          <div className="container mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-6 text-center md:text-left">
-            <div>
-              <img src={logoSrc} alt={brandName} className="h-12 w-auto mx-auto md:mx-0 mb-2" />
-              <p className="text-sm text-muted-foreground">
-                {addressLine}
-                {cityLine ? ` · ${cityLine}` : ""}
-              </p>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-3 items-center">
-              {phoneTel && (
-                <a
-                  href={`tel:${phoneTel}`}
-                  className="text-primary font-semibold hover:underline"
-                >
-                  {phoneDisplay || phoneTel}
-                </a>
-              )}
-              <a
-                href={`https://www.google.com/maps/search/?api=1&query=${mapsQuery}`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-sm text-muted-foreground hover:text-primary underline underline-offset-4"
-              >
-                Directions
-              </a>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              © {new Date().getFullYear()} {brandName}
-            </p>
-          </div>
-        </footer>
-      ) : (
-        <footer className="bg-accent text-accent-foreground py-16 border-t-4 border-primary">
-          <div className="container mx-auto px-4 grid grid-cols-1 md:grid-cols-3 gap-12 text-center md:text-left">
-            <div>
-              <img src={logoSrc} alt={brandName} className="h-20 w-auto mb-4" />
-              <a
-                href={`https://www.google.com/maps/search/?api=1&query=${mapsQuery}`}
-                target="_blank"
-                rel="noreferrer"
-                className="block text-accent-foreground/80 hover:text-primary transition-colors mb-1 underline underline-offset-2"
-              >
-                {addressLine}
-              </a>
-              <p className="text-accent-foreground/80 mb-5">{cityLine}</p>
-              <a
-                href={`tel:${phoneTel}`}
-                className="block text-xl font-serif text-primary hover:text-primary-foreground transition-colors mb-2"
-              >
-                {phoneDisplay || "Call to order"}
-              </a>
-              {phoneTel && (
-                <a
-                  href={`tel:${phoneTel}`}
-                  className="mt-5 flex items-center justify-center md:justify-start gap-2 bg-primary hover:bg-primary/90 text-white font-semibold text-sm py-2.5 px-5 rounded-full transition-colors w-fit"
-                >
-                  Call to Order
-                </a>
-              )}
-            </div>
-
-            <div>
-              <h3 className="font-serif text-xl mb-6 text-primary-foreground">Hours</h3>
-              <div className="flex flex-col gap-1.5 text-sm items-center md:items-start">
-                {weeklyHours.map(({ day, hours }) => (
-                  <div key={day} className="flex gap-3 w-full max-w-[220px]">
-                    <span className="text-accent-foreground/60 w-24 shrink-0">{day}</span>
-                    <span className="text-accent-foreground/90 font-medium">{hours}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="font-serif text-xl mb-6 text-primary-foreground">Connect</h3>
-              <div className="flex flex-col items-center md:items-start gap-4">
-                <a
-                  href={`https://www.google.com/maps/search/?api=1&query=${mapsQuery}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-accent-foreground/80 hover:text-primary transition-colors underline underline-offset-4"
-                >
-                  Find us on Google Maps
-                </a>
-              </div>
-              <div className="mt-8 pt-6 border-t border-accent-foreground/10 text-center md:text-left">
-                <p className="text-xs text-accent-foreground/40">
-                  © {new Date().getFullYear()} {brandName}
-                </p>
-                <p className="text-xs text-accent-foreground/30 mt-1">
-                  {cityLine} · All rights reserved
-                </p>
-              </div>
-            </div>
-          </div>
-        </footer>
-      )}
+      <StorefrontFooter config={pageConfig} />
     </div>
   );
 }

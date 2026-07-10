@@ -49,6 +49,7 @@ fi
 echo "==> 3) Apply Identity Packs (Samurai + Kirin layout variants)"
 psql "$DBURL" -f "$ROOT/scripts/apply-samurai-identity-pack.sql"
 psql "$DBURL" -f "$ROOT/scripts/apply-kirin-themepack.sql"
+psql "$DBURL" -f "$ROOT/scripts/apply-replit-variant-names.sql"
 
 echo "==> 4) Set STOREFRONT_DIST"
 python3 - <<PY
