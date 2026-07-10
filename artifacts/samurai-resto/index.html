@@ -16,7 +16,8 @@
     <meta property="og:url" content="/" />
     <meta property="og:locale" content="en_US" />
     <meta name="twitter:card" content="summary_large_image" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Favicon injected per-tenant by Express (ORDERLY head). Avoid /favicon.svg here —
+         on some VPS deploys that path was corrupted into a directory and broke vite build. -->
     <!-- /ORDERLY:TENANT_HEAD -->
 
     <!-- Fonts — tenant theme may override via CSS variables after hydrate -->
