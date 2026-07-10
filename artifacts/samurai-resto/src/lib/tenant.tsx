@@ -6,6 +6,17 @@ import {
   type ReactNode,
 } from "react";
 import { useQuery } from "@tanstack/react-query";
+import {
+  parseStorefrontConfig,
+  withSamuraiBundledDefaults,
+  type StorefrontConfig,
+} from "@/lib/storefrontConfig";
+import {
+  SAMURAI_BROCHURES,
+  SAMURAI_HERO_IMAGES,
+  SAMURAI_REVIEWS,
+  SAMURAI_STORY_IMAGE,
+} from "@/lib/samuraiDefaultAssets";
 
 export type TenantTheme = {
   primary?: string;
@@ -37,8 +48,12 @@ export type TenantTheme = {
     hero_variant?: string;
     menu_variant?: string;
     nav_variant?: string;
+    footer_variant?: string;
+    featured_variant?: string;
     section_style?: string;
+    sections?: string[];
   };
+  copy?: Record<string, unknown>;
   assets?: Record<string, string>;
   identity?: Record<string, unknown>;
   seo?: Record<string, string>;
@@ -93,6 +108,7 @@ type TenantContextValue = {
   mapsSearchUrl: string;
   weeklyHours: TenantHoursDay[];
   metaTitle: string;
+  storefront: StorefrontConfig;
 };
 
 const TenantContext = createContext<TenantContextValue | null>(null);
@@ -202,6 +218,9 @@ function applyTheme(theme: TenantTheme | null | undefined) {
   }
   if (layout?.nav_variant) {
     root.dataset.navVariant = layout.nav_variant;
+  }
+  if (layout?.footer_variant) {
+    root.dataset.footerVariant = layout.footer_variant;
   }
   if (layout?.section_style) {
     root.dataset.sectionStyle = layout.section_style;
@@ -325,6 +344,19 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         nestedStr(seo, "title") ||
         (typeof theme?.metaTitle === "string" && theme.metaTitle) ||
         brandName,
+      storefront: withSamuraiBundledDefaults(
+        parseStorefrontConfig(
+          (theme ?? null) as Record<string, unknown> | null,
+          data?.tenantId,
+        ),
+        data?.tenantId,
+        {
+          heroImages: SAMURAI_HERO_IMAGES,
+          storyImage: SAMURAI_STORY_IMAGE,
+          reviews: SAMURAI_REVIEWS,
+          brochures: SAMURAI_BROCHURES,
+        },
+      ),
     };
   }, [data, isLoading]);
 

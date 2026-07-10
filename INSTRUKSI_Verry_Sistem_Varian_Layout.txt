@@ -1,0 +1,120 @@
+INSTRUKSI UNTUK VERRY — SISTEM VARIAN LAYOUT (SUPAYA TIAP RESTORAN UNIK, ALA SHOPIFY)
+======================================================================================
+
+MASALAH YANG DITEMUKAN (dari screenshot samurairesto.com vs kirinhibachiexpress.com):
+Meta/SEO sudah beda per tenant (bagus). TAPI tampilan kedua situs MASIH KEMBAR — hanya
+beda WARNA. Struktur, layout, urutan section, headline, foto, dan copy MASIH IDENTIK:
+  - Headline hero sama persis: "Fresh Sushi. Hot Hibachi. Delivered Fast."
+    (padahal Kirin = Hibachi Express, bukan sushi — headline tidak cocok)
+  - Urutan section identik: Hero -> Download Menus -> Featured -> Reviews -> Our Story
+  - "Our Story" judul & isi sama: "The Neighborhood Japanese Experience"
+  - Statistik sama: "79+ Menu Items · 100% Fresh Daily"
+  - Foto Beef Bento Box yang SAMA dipakai di dua situs
+  - Copy/teks banyak yang identik (hasil salinan template Samurai)
+
+Mengganti WARNA saja TIDAK CUKUP. Tujuan Malik: seperti Shopify / seperti Owner.com — tiap
+restoran punya website dengan CIRI SENDIRI, bukan satu template dengan cat berbeda.
+
+======================================================================================
+TARGET: SISTEM VARIAN (bukan satu template tunggal)
+======================================================================================
+Bangun BEBERAPA VARIAN untuk tiap bagian halaman. Tiap tenant MEMILIH kombinasi varian
+(via config) + warna + font + logo + KONTEN & FOTO SENDIRI. Hasilnya: dua restoran tidak
+pernah terlihat sama, meski satu codebase.
+
+Ini beda dari sekarang: sekarang = 1 template dipakai semua (cuma warna beda).
+Target = banyak varian + konten unik per tenant, dipilih lewat config.
+
+======================================================================================
+1. VARIAN HERO (bangun 3-4 gaya berbeda; tenant pilih 1)
+======================================================================================
+- hero-fullimage-bold : foto besar full-bleed + headline besar di tengah (gaya sekarang)
+- hero-split          : kiri teks/CTA, kanan foto/kartu — layout terbelah
+- hero-minimal-center : latar warna solid/gradient (tanpa foto dominan), headline tipografi kuat
+- hero-carousel-cards : slider beberapa kartu (menu unggulan) + headline samping
+Tiap tenant pilih via config: theme.layout.hero_variant.
+CATATAN: Kirin sebaiknya TIDAK pakai varian & headline yang sama dgn Samurai.
+
+======================================================================================
+2. HEADLINE & COPY PER TENANT (dari config/DB, BUKAN hardcode)
+======================================================================================
+Semua teks storefront harus dari config tenant, bukan template:
+- hero_headline, hero_subheadline, hero_cta_labels
+- story_title, story_body  (JANGAN "The Neighborhood Japanese Experience" untuk semua)
+- stats (angka & label — atau matikan kalau tidak relevan)
+Contoh Kirin: headline fokus HIBACHI/GRILL (mis. "Sizzling Hibachi. Made Fresh & Fast."),
+bukan "Fresh Sushi". Samurai boleh tetap sushi-forward. Tiap resto punya suara sendiri.
+
+======================================================================================
+3. SUSUNAN SECTION FLEKSIBEL (urutan & on/off per tenant)
+======================================================================================
+Jadikan halaman sebagai DAFTAR SECTION yang bisa diatur per tenant (page builder sederhana):
+- Section tersedia: Hero, Featured Dishes, Menu Download, Reviews, Our Story, Gallery,
+  Catering, Map/Location, CTA banner, dll.
+- Tiap tenant tentukan di config: section mana TAMPIL, dan URUTANNYA.
+  Contoh: Samurai = [Hero, MenuDownload, Featured, Reviews, Story]
+          Kirin   = [Hero, Featured, Story, Catering, MenuDownload]  (urutan & isi beda)
+- Section yang tidak punya data (mis. Reviews kosong) otomatis disembunyikan.
+
+======================================================================================
+4. VARIAN LAYOUT MENU & KOMPONEN
+======================================================================================
+- Menu: varian grid / list / kartu-besar (tenant pilih).
+- Featured Dishes: varian kartu berbeda.
+- Nav & Footer: minimal 2 varian gaya.
+Tenant pilih via config. Kombinasi varian = tampilan berbeda.
+
+======================================================================================
+5. KONTEN & FOTO MILIK MASING-MASING RESTORAN (kritis)
+======================================================================================
+- JANGAN pakai foto yang sama antar tenant (mis. foto "Beef Bento Box" muncul di Samurai
+  DAN Kirin — ini salah). Tiap tenant pakai foto sendiri.
+- Kalau tenant belum punya foto, pakai placeholder NETRAL (bukan foto tenant lain),
+  dan tandai "perlu foto dari restoran".
+- Menu, harga, cerita, review = milik tenant itu (dari DB/ Square catalog tenant).
+
+======================================================================================
+6. CARA KERJA (config-driven, ala Shopify themes)
+======================================================================================
+Analogi Shopify: ada beberapa "tema" (Dawn, Craft, Sense...) + tiap toko kustomisasi
+(warna, font, section, konten). BUKAN tiap toko punya kode sendiri.
+Untuk Orderly:
+- Komponen varian dibangun SEKALI (reusable).
+- Tiap tenant = config: {theme (warna/font), hero_variant, menu_variant, section_order,
+  headline/copy, assets/foto, konten}.
+- Menambah restoran baru = isi config berbeda + pilih varian berbeda + konten sendiri.
+  TANPA menulis/menyalin kode. Dua restoran tidak akan pernah identik.
+
+======================================================================================
+ALUR PRODUKSI IDENTITAS (peran Malik & Claude)
+======================================================================================
+- Untuk tiap tenant baru, Malik kirim ke Claude: nama, jenis masakan, logo, foto, "rasa"
+  yang diinginkan (mewah/kasual/vintage/modern), menu.
+- Claude hasilkan "Identity Pack": warna + font + PILIHAN varian (hero/menu/section order) +
+  headline & copy khas resto itu + struktur konten. (Bukan cuma warna — termasuk pilihan
+  layout & copy unik.)
+- Verry colok Identity Pack ke config tenant. Verry TIDAK mendesain tiap situs manual;
+  Verry membangun SISTEM VARIAN sekali, lalu tiap tenant tinggal pilih+isi.
+
+======================================================================================
+VERIFIKASI (Definition of Done)
+======================================================================================
+[ ] Ada MINIMAL 3 varian hero + 2 varian menu + 2 varian nav/footer yang bisa dipilih per tenant.
+[ ] Section bisa diatur urutan & on/off per tenant (bukan urutan tetap untuk semua).
+[ ] Semua headline/copy/story/stats dari config tenant (tidak ada teks hardcode dipakai bersama).
+[ ] Tidak ada foto yang dipakai bersama antar tenant (tiap resto foto sendiri / placeholder netral).
+[ ] Samurai & Kirin terlihat BERBEDA STRUKTUR (bukan cuma warna): headline beda, urutan
+    section beda, hero variant beda.
+[ ] Menambah tenant contoh baru dari config saja -> tampil beda dari keduanya, tanpa kode baru.
+
+======================================================================================
+CATATAN
+======================================================================================
+- Ini kelanjutan wajar dari multi-tenant: fondasi data & meta sudah beres, sekarang lapisan
+  TAMPILAN harus benar-benar per-tenant (varian + konten), bukan satu template + warna.
+- Prioritas: bangun sistem varian + pindahkan semua copy/foto ke config. Setelah itu,
+  tiap Identity Pack dari Claude bisa menghasilkan situs yang benar-benar khas.
+- Ini yang membuat Orderly setara Shopify/Owner: setiap restoran punya wajah sendiri.
+
+Tolong konfirmasi apakah pendekatan sistem-varian ini jelas, dan perkiraan usaha untuk
+membangun varian-varian awal. Terima kasih.

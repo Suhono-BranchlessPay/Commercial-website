@@ -46,7 +46,8 @@ if [ ! -f "$ROOT/artifacts/samurai-resto/index.html" ]; then
   exit 1
 fi
 
-echo "==> 3) Apply Kirin Theme Pack"
+echo "==> 3) Apply Identity Packs (Samurai + Kirin layout variants)"
+psql "$DBURL" -f "$ROOT/scripts/apply-samurai-identity-pack.sql"
 psql "$DBURL" -f "$ROOT/scripts/apply-kirin-themepack.sql"
 
 echo "==> 4) Set STOREFRONT_DIST"

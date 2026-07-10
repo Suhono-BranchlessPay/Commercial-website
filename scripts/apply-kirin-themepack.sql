@@ -1,4 +1,5 @@
--- Apply ThemePack_Kirin.md → tenants row for Kirin
+-- Identity Pack: Kirin Hibachi Express
+-- Layout variants + copy + sections (structurally different from Samurai).
 -- Menu stays EMPTY until Square Kirin is connected.
 -- Safe to re-run.
 
@@ -38,6 +39,7 @@ UPDATE tenants SET
     "facebookUrl": "https://www.facebook.com/profile.php?id=61591591400890",
     "logoUrl": "/kirin-logo.png",
     "faviconUrl": "/kirin-favicon.svg",
+    "use_shared_food_photos": false,
 
     "colors": {
       "primary": "#8B2318",
@@ -61,10 +63,44 @@ UPDATE tenants SET
     },
 
     "layout": {
-      "hero_variant": "image-bold",
-      "menu_variant": "card-warm",
-      "nav_variant": "solid-dark",
-      "section_style": "textured"
+      "hero_variant": "hero-split",
+      "menu_variant": "menu-list",
+      "nav_variant": "nav-solid-dark",
+      "footer_variant": "footer-compact",
+      "featured_variant": "featured-wide",
+      "section_style": "textured",
+      "sections": [
+        "hero",
+        "featured",
+        "story",
+        "catering_cta",
+        "menu_download",
+        "location_cta"
+      ]
+    },
+
+    "copy": {
+      "hero_headline": ["Sizzling Hibachi.", "Made Fresh & Fast."],
+      "hero_subheadline": "Neighborhood grill in Henderson, KY — order pickup online. No marketplace markups.",
+      "hero_ctas": [
+        {"label": "Order Pickup", "href": "/order", "style": "primary"},
+        {"label": "View Menu", "href": "/menu", "style": "outline"}
+      ],
+      "featured_eyebrow": "From the Grill",
+      "featured_title": "Hibachi Favorites",
+      "story_eyebrow": "Est. 2026",
+      "story_title": "Henderson’s Neighborhood Grill",
+      "story_body": [
+        "Kirin Hibachi Express brings sizzling hibachi and Japanese grill favorites to Henderson, Kentucky — prepared fresh, served fast.",
+        "Order online for pickup. Catering trays available for office lunch and weekend gatherings."
+      ],
+      "story_image_label": null,
+      "story_image_caption": null,
+      "stats": [],
+      "reviews": [],
+      "brochures": [],
+      "menu_page_title": "Grill Menu",
+      "menu_page_subtitle": "Fresh hibachi and Japanese grill favorites — prepared to order."
     },
 
     "assets": {
@@ -115,14 +151,15 @@ UPDATE tenants SET
   status = 'active'
 WHERE id = 'kirin';
 
--- Ensure menu stays empty (no Samurai clone)
 DELETE FROM menu_items WHERE tenant_id = 'kirin';
 DELETE FROM menu_categories WHERE tenant_id = 'kirin';
 
 SELECT id,
-       theme->'seo'->>'title' AS seo_title,
-       theme->'seo'->>'canonical' AS canonical,
-       theme->'colors'->>'primary' AS primary_color,
-       theme->'fonts'->>'display' AS display_font,
-       theme->'layout'->>'hero_variant' AS hero
+       theme->'layout'->>'hero_variant' AS hero,
+       theme->'layout'->>'menu_variant' AS menu,
+       theme->'layout'->>'nav_variant' AS nav,
+       theme->'layout'->>'footer_variant' AS footer,
+       theme->'layout'->'sections' AS sections,
+       theme->'copy'->'hero_headline' AS headline,
+       theme->>'use_shared_food_photos' AS shared_photos
 FROM tenants WHERE id = 'kirin';
