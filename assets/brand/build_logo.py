@@ -197,12 +197,13 @@ def compose_lockup(badge: Image.Image, background, scale_badge_h=640):
 
     text_x = pad + icon.size[0] + gap_icon_text
     text_top = pad + (canvas_h - text_block_h) // 2
+    # Draw ORDERLY so its ink starts at text_x (compensate font left bearing)
     draw.text((text_x - word_bb[0], text_top - word_bb[1]), word, font=font_word, fill=TEAL)
 
-    ink_left, ink_w = measure_ink(
-        canvas,
-        (text_x - 4, text_top - 4, text_x + word_w + 12, text_top + word_h + 4),
-    )
+    # Align FOODS.COM to the same left edge + exact font width as ORDERLY
+    # (more reliable than pixel sampling which can miss AA edges)
+    ink_left = text_x
+    ink_w = word_w
     sub_y = text_top + word_h + gap_lines - sub_bb[1]
     draw_justified(draw, sub, font_sub, ink_left, sub_y, ink_w, TEAL, probe, stroke=1)
 

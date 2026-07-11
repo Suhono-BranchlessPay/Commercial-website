@@ -17,7 +17,7 @@ for name in ["orderly-logo.png", "orderly-powered.png", "orderly-powered-on-dark
 
 js = patch / "assets/index-GxDQVBBw.js"
 s = js.read_text(encoding="utf-8")
-s = re.sub(r"/orderly-logo\.png(\?v=[^\"]*)?", "/orderly-logo.png?v=20260711e", s)
+s = re.sub(r"/orderly-logo\.png(\?v=[^\"]*)?", "/orderly-logo.png?v=20260711f", s)
 js.write_text(s, encoding="utf-8")
-print("cache-bust refs", s.count("orderly-logo.png?v=20260711e"))
+print("cache-bust refs", s.count("orderly-logo.png?v=20260711f"))
 print("done")
