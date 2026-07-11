@@ -231,10 +231,12 @@ export async function resolveTenant(options: {
 
 /**
  * Per-tenant secret lookup: TENANT_{SLUG}_{KEY} then global KEY.
+ * Hyphens in slug become underscores (samurai-linton → SAMURAI_LINTON).
  * Secrets never stored in DB plaintext.
  */
 export function tenantSecret(slug: string, key: string): string | undefined {
-  const prefixed = process.env[`TENANT_${slug.toUpperCase()}_${key}`];
+  const envSlug = slug.trim().toUpperCase().replace(/-/g, "_");
+  const prefixed = process.env[`TENANT_${envSlug}_${key}`];
   if (prefixed?.trim()) return prefixed.trim();
   const global = process.env[key];
   return global?.trim() || undefined;

@@ -340,10 +340,17 @@ export function parseStorefrontConfig(
       `Order online from ${brand}.`,
     heroCtas,
     heroImages,
-    storyEyebrow: str(copy.story_eyebrow, isKirin ? "Est. 2026" : "Our Story"),
+    storyEyebrow: str(
+      copy.story_eyebrow,
+      isLinton ? "Now in Linton, IN" : isKirin ? "Est. 2026" : "Our Story",
+    ),
     storyTitle: str(
       copy.story_title,
-      isKirin ? "Henderson’s Neighborhood Grill" : "The Neighborhood Japanese Experience",
+      isLinton
+        ? "Same Samurai. New Home in Linton."
+        : isKirin
+          ? "Henderson’s Neighborhood Grill"
+          : "The Neighborhood Japanese Experience",
     ),
     storyBody: storyBody.length
       ? storyBody
@@ -356,14 +363,22 @@ export function parseStorefrontConfig(
     stats,
     reviews,
     brochures,
-    featuredEyebrow: str(copy.featured_eyebrow, isKirin ? "From the Grill" : "Chef's Selection"),
-    featuredTitle: str(copy.featured_title, isKirin ? "Hibachi Favorites" : "Featured Dishes"),
-    menuPageTitle: str(copy.menu_page_title, "Our Menu"),
+    featuredEyebrow: str(
+      copy.featured_eyebrow,
+      isLinton || isKirin ? "From the Grill" : "Chef's Selection",
+    ),
+    featuredTitle: str(
+      copy.featured_title,
+      isLinton || isKirin ? "Hibachi Favorites" : "Featured Dishes",
+    ),
+    menuPageTitle: str(copy.menu_page_title, isLinton ? "Linton Menu" : "Our Menu"),
     menuPageSubtitle: str(
       copy.menu_page_subtitle,
-      isKirin
-        ? "Fresh hibachi and Japanese grill favorites — prepared to order."
-        : "From our sizzling hibachi grills to our masterfully crafted sushi rolls.",
+      isLinton
+        ? "Menu syncs from Square Linton when connected. Pickup only for now."
+        : isKirin
+          ? "Fresh hibachi and Japanese grill favorites — prepared to order."
+          : "From our sizzling hibachi grills to our masterfully crafted sushi rolls.",
     ),
     useSharedFoodPhotos:
       t.use_shared_food_photos === true ||

@@ -91,12 +91,14 @@ function licenseKey(slug: string): string | undefined {
   // Platform-first: one Orderly key for all restaurants (tenant_id distinguishes).
   // Optional per-tenant override only if TENANT_{SLUG}_BRANCHLESSPAY_LICENSE_KEY is set
   // and no global platform key exists — or set both; tenant override wins when present.
+  const envSlug = slug.trim().toUpperCase().replace(/-/g, "_");
   const perTenant =
-    process.env[`TENANT_${slug.toUpperCase()}_BRANCHLESSPAY_LICENSE_KEY`]?.trim() ||
-    process.env[`TENANT_${slug.toUpperCase()}_BP_LICENSE_KEY`]?.trim();
+    process.env[`TENANT_${envSlug}_BRANCHLESSPAY_LICENSE_KEY`]?.trim() ||
+    process.env[`TENANT_${envSlug}_BP_LICENSE_KEY`]?.trim();
   const platform =
     process.env.BRANCHLESSPAY_LICENSE_KEY?.trim() ||
-    process.env.BP_LICENSE_KEY?.trim();
+    process.env.BP_LICENSE_KEY?.trim() ||
+    process.env.ORDERLY_BP_API_KEY?.trim();
   // Prefer platform key when present (scalable multi-tenant). Per-tenant only if no platform key.
   return platform || perTenant || undefined;
 }
@@ -261,6 +263,7 @@ export async function auditOrderWithBpShield(
 
 /**
  * Post-pay immutable anchor — ONLY for anchor_mode=platform.
+ * Uses Orderly platform key; restaurants distinguished by metadata.tenant_id.
  * Non-blocking for order success: caller should log failures and continue.
  */
 export async function anchorPaidOrder(
@@ -271,18 +274,23 @@ export async function anchorPaidOrder(
     return { ok: false, error: "BRANCHLESSPAY_LICENSE_KEY not configured" };
   }
 
+  const merchantId =
+    process.env.BRANCHLESSPAY_MERCHANT_ID?.trim() || "orderly";
+
+  // Contract: platform key + merchant_id=orderly + metadata.tenant_id per restaurant
   const payload: Record<string, unknown> = {
-    event_type: "orderly_order_paid",
-    reference_id: input.squarePaymentId || input.orderId,
+    reference_id: input.orderId,
     amount: input.total,
     currency: input.currency ?? "USD",
+    merchant_id: merchantId,
+    event_type: "orderly_order_paid",
     timestamp: new Date().toISOString(),
     metadata: {
+      tenant_id: input.tenantSlug,
+      restaurant_name: input.tenantName,
+      source: "website",
       erp: "orderly",
-      tenant: input.tenantSlug,
-      restaurant: input.tenantName,
       order_type: input.orderType,
-      orderly_order_id: input.orderId,
       square_payment_id: input.squarePaymentId ?? undefined,
       square_order_id: input.squareOrderId ?? undefined,
       customer_name: input.customerName,
@@ -316,10 +324,16 @@ export async function anchorPaidOrder(
         : typeof data.tx_hash === "string"
           ? data.tx_hash
           : null;
+    const verifyUrl =
+      typeof data.verify_url === "string"
+        ? data.verify_url.startsWith("http")
+          ? data.verify_url
+          : `https://${data.verify_url.replace(/^\/\//, "")}`
+        : null;
     const explorer =
       typeof data.monad_explorer_url === "string"
         ? data.monad_explorer_url
-        : explorerUrlForTx(txHash);
+        : verifyUrl || explorerUrlForTx(txHash);
     return {
       ok: data.ok !== false,
       anchorId: typeof data.anchor_id === "string" ? data.anchor_id : undefined,
@@ -329,6 +343,7 @@ export async function anchorPaidOrder(
           : String(payload.content_hash),
       txHash,
       explorerUrl: explorer,
+      verifyUrl,
       status: typeof data.status === "string" ? data.status : "queued",
     };
   } catch (err) {

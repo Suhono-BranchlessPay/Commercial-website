@@ -59,6 +59,8 @@ server {
 curl -sI -H "Host: kirinhibachiexpress.com" http://127.0.0.1:8080/ | head
 curl -s  -H "Host: kirinhibachiexpress.com" http://127.0.0.1:8080/ | grep -E 'canonical|og:title|<title>'
 # Expect: canonical https://kirinhibachiexpress.com/  (NOT samurairesto.com)
+curl -s  -H "Host: samurailinton.com" http://127.0.0.1:8080/ | grep -E 'canonical|og:title|<title>'
+# Expect: canonical https://samurailinton.com/  (NOT samurairesto.com)
 ```
 
 ## DB migration for SEO theme
