@@ -1,19 +1,23 @@
 from pathlib import Path
 import re
+import shutil
+import subprocess
 
 root = Path(r"C:\Users\Thinkbook\Downloads\Orderly Platform")
-# rebuild already done separately; just cache-bust + copy
-src = root / "assets" / "brand" / "orderly-logo.png"
-patch = root / "deploy" / "orderlyfoods-lang-patch"
-patch.mkdir(parents=True, exist_ok=True)
-(patch / "orderly-logo.png").write_bytes(src.read_bytes())
-trans = root / "assets" / "brand" / "orderly-logo-transparent.png"
-if trans.exists():
-    (patch / "orderly-logo-transparent.png").write_bytes(trans.read_bytes())
+subprocess.check_call(["python", str(root / "assets/brand/build_logo.py")])
 
-js = patch / "assets" / "index-GxDQVBBw.js"
+brand = root / "assets/brand"
+patch = root / "deploy/orderlyfoods-lang-patch"
+pub = root / "artifacts/samurai-resto/public"
+
+for name in ["orderly-logo.png", "orderly-logo-transparent.png"]:
+    shutil.copy2(brand / name, patch / name)
+for name in ["orderly-logo.png", "orderly-powered.png", "orderly-powered-on-dark.png"]:
+    shutil.copy2(brand / name, pub / name)
+
+js = patch / "assets/index-GxDQVBBw.js"
 s = js.read_text(encoding="utf-8")
-s2 = re.sub(r"/orderly-logo\.png(?:\?v=[^\"]*)?", "/orderly-logo.png?v=20260711d", s)
-js.write_text(s2, encoding="utf-8")
-print("logo bytes", src.stat().st_size)
-print("bust refs", s2.count("orderly-logo.png?v=20260711d"))
+s = re.sub(r"/orderly-logo\.png(\?v=[^\"]*)?", "/orderly-logo.png?v=20260711e", s)
+js.write_text(s, encoding="utf-8")
+print("cache-bust refs", s.count("orderly-logo.png?v=20260711e"))
+print("done")
