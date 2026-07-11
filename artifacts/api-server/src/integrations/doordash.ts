@@ -288,11 +288,52 @@ export async function acceptDeliveryQuote(
   };
 }
 
+/** Normalize DoorDash webhook event names to dotted lowercase. */
+export function normalizeDoordashEventName(raw: string): string {
+  return String(raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, "_")
+    .replace(/_/g, ".");
+}
+
+/**
+ * Map Drive webhook event → our orders.status.
+ * DoorDash sends event_name or event_type like DELIVERY_CANCELLED, DASHER_DROPPED_OFF.
+ */
 export function mapDoordashEventToOrderStatus(eventType: string): string | null {
-  const e = eventType.toLowerCase().replace(/_/g, ".");
-  if (e === "dasher.confirmed") return "preparing";
-  if (e === "dasher.picked.up") return "ready";
-  if (e === "dasher.dropped.off") return "completed";
-  if (e === "delivery.cancelled" || e === "delivery.returned") return "cancelled";
+  const e = normalizeDoordashEventName(eventType);
+
+  if (
+    e === "delivery.cancelled" ||
+    e === "delivery.canceled" ||
+    e === "delivery.returned" ||
+    e.includes("cancel")
+  ) {
+    return "cancelled";
+  }
+  if (e === "dasher.dropped.off" || e === "delivery.delivered") {
+    return "completed";
+  }
+  if (
+    e === "dasher.picked.up" ||
+    e === "dasher.confirmed.pickup.arrival" ||
+    e === "dasher.enroute.to.dropoff"
+  ) {
+    return "ready";
+  }
+  if (
+    e === "dasher.confirmed" ||
+    e === "dasher.enroute.to.pickup" ||
+    e === "dasher.confirmed.dropoff.arrival"
+  ) {
+    return "preparing";
+  }
   return null;
+}
+
+/** Canonical doordash_status value stored on the order row. */
+export function canonicalDoordashStatus(eventType: string): string {
+  const e = normalizeDoordashEventName(eventType);
+  return e || "unknown";
 }
