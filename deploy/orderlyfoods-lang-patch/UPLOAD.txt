@@ -1,17 +1,21 @@
 ﻿Upload these files to Hostinger File Manager for orderlyfoods.com (public_html):
 
-1. index.html              -> replace public_html/index.html
-2. assets/index-GxDQVBBw.js -> replace public_html/assets/index-GxDQVBBw.js
-   (Do NOT rename the JS file — index.html still points to index-GxDQVBBw.js)
-3. orderly-logo.png         -> replace public_html/orderly-logo.png
-   (optional) orderly-logo-transparent.png -> public_html/orderly-logo-transparent.png
+1. orderly-logo.png          -> replace public_html/orderly-logo.png
+   (header top-left + footer bottom-left both use /orderly-logo.png)
+2. index.html                -> replace public_html/index.html
+3. assets/index-GxDQVBBw.js  -> replace public_html/assets/index-GxDQVBBw.js
+   Do NOT rename the JS file (index.html still points to index-GxDQVBBw.js).
 
-Logo:
-- Uses the original fork badge + aligned ORDERLY / FOODS.COM lockup
-- Served as /orderly-logo.png (header + footer)
+Optional:
+- orderly-logo-transparent.png -> public_html/orderly-logo-transparent.png
 
-Language UI:
-- Desktop / default: English
-- Mobile: follows phone language if supported (id, zh, es, th, my, vi, hi, ne, fil, ar), else English
-- Manual language dropdown choice is remembered (localStorage.orderly_lang)
-- Dropdown restyled as a compact pill control (CSS injected in index.html)
+After upload, hard-refresh (Ctrl+Shift+R) or open a private window.
+
+Language behavior:
+- First visit (no saved choice): always English (desktop + mobile)
+- All 11 language options unchanged in the dropdown
+- Manual choice is remembered in localStorage.orderly_lang
+
+If the site still opens in Indonesian, clear site data for orderlyfoods.com
+(or run in the browser console: localStorage.removeItem("orderly_lang"))
+then reload — it will default to English again.
