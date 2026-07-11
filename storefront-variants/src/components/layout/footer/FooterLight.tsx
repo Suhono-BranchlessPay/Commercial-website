@@ -29,11 +29,11 @@ export function FooterLight({ data }: { data: FooterConfig["data"] }) {
           href={ORDERLY_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 text-xs uppercase tracking-widest font-bold opacity-50 hover:opacity-100 transition-opacity"
+          className="inline-flex items-center gap-2.5 text-xs uppercase tracking-[0.18em] font-semibold opacity-70 hover:opacity-100 transition-opacity"
           aria-label="Powered by Orderly Foods"
         >
           <span>Powered by</span>
-          <img src="/orderly-powered.png" alt="Orderly Foods" className="h-5 w-auto" />
+          <img src="/orderly-powered.png" alt="Orderly Foods" className="h-8 md:h-9 w-auto" />
         </a>
       </div>
     </footer>

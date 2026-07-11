@@ -186,29 +186,24 @@ def compose_lockup(badge: Image.Image, background, scale_badge_h=520):
 
 
 def make_powered(src_lockup: Image.Image, on_dark: bool = False) -> Image.Image:
-    """Compact footer mark: original badge + ORDERLY word (no FOODS.COM), for 'Powered by'."""
-    # Re-extract badge from lockup left side roughly
-    # Better: rebuild small from transparent lockup crop of badge area
-    # Use full lockup scaled down for consistency
-    h = 64
+    """Compact footer mark from full lockup — high-res so CSS can scale cleanly."""
+    h = 160  # retina-friendly; display ~32–40px in footer
     scale = h / src_lockup.size[1]
     img = src_lockup.resize(
         (max(1, int(src_lockup.size[0] * scale)), h),
         Image.Resampling.LANCZOS,
     )
     if on_dark:
-        # recolor teal → near-white for dark footers
         px = img.load()
         for y in range(img.size[1]):
             for x in range(img.size[0]):
                 c = px[x, y]
                 if c[3] < 10:
                     continue
-                # map dark teal ink to light
                 lum = (c[0] + c[1] + c[2]) / 3
-                if lum < 200:  # ink
+                if lum < 200:
                     a = c[3]
-                    px[x, y] = (220, 220, 220, a)
+                    px[x, y] = (230, 230, 230, a)
     return img
 
 

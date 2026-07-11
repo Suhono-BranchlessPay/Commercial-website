@@ -18,16 +18,22 @@ export function PoweredByOrderly({ variant = "light", className = "" }: Props) {
       href={ORDERLY_SITE_URL}
       target="_blank"
       rel="noopener noreferrer"
-      className={`inline-flex items-center gap-2 opacity-70 hover:opacity-100 transition-opacity ${className}`}
+      className={`inline-flex items-center gap-2.5 opacity-80 hover:opacity-100 transition-opacity ${className}`}
       aria-label="Powered by Orderly Foods"
     >
-      <span className="text-[10px] uppercase tracking-widest font-semibold">
+      <span
+        className={
+          variant === "dark"
+            ? "text-xs uppercase tracking-[0.18em] font-semibold text-zinc-400"
+            : "text-xs uppercase tracking-[0.18em] font-semibold text-muted-foreground"
+        }
+      >
         Powered by
       </span>
       <img
         src={src}
         alt="Orderly Foods"
-        className="h-5 w-auto"
+        className="h-8 md:h-9 w-auto"
         loading="lazy"
         decoding="async"
       />

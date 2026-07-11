@@ -45,8 +45,8 @@ export function FooterDark({ data }: { data: FooterConfig["data"] }) {
             className="inline-flex items-center gap-2 text-zinc-500 hover:text-zinc-300 transition-colors"
             aria-label="Powered by Orderly Foods"
           >
-            <span className="text-[10px] uppercase tracking-widest font-semibold">Powered by</span>
-            <img src="/orderly-powered-on-dark.png" alt="Orderly Foods" className="h-5 w-auto" />
+            <span className="text-xs uppercase tracking-[0.18em] font-semibold text-zinc-400">Powered by</span>
+            <img src="/orderly-powered-on-dark.png" alt="Orderly Foods" className="h-8 md:h-9 w-auto" />
           </a>
         </div>
       </div>
