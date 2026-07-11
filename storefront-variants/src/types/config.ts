@@ -86,9 +86,17 @@ export type FooterConfig = {
   };
 };
 
+export type TenantMeta = {
+  brand?: string;
+  location?: { city: string; state: string; address?: string; phone?: string; hours?: string };
+  orderTypes?: ("pickup" | "delivery")[];
+  notes?: string;
+};
+
 export type TenantConfig = {
   id: string;
   name: string;
+  meta?: TenantMeta;
   theme: ThemeConfig;
   nav: NavConfig;
   sections: SectionConfig[];

@@ -3,7 +3,14 @@ import { demos } from "@/data/demos";
 import { PageRenderer } from "@/components/PageRenderer";
 
 export function App() {
-  const [activeDemo, setActiveDemo] = useState(0);
+  const [activeDemo, setActiveDemo] = useState(() => {
+    const param = new URLSearchParams(window.location.search).get("demo");
+    if (!param) return 0;
+    const byId = demos.findIndex((d) => d.id === param);
+    if (byId >= 0) return byId;
+    const byIndex = Number(param);
+    return Number.isInteger(byIndex) && byIndex >= 0 && byIndex < demos.length ? byIndex : 0;
+  });
   const config = demos[activeDemo];
 
   return (

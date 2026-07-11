@@ -1,4 +1,5 @@
 import { TenantConfig } from "../types/config";
+import { samuraiLinton } from "./samurai-linton";
 
 const demoA: TenantConfig = {
   id: "demo-a",
@@ -189,4 +190,4 @@ const demoC: TenantConfig = {
   },
 };
 
-export const demos = [demoA, demoB, demoC];
+export const demos = [demoA, demoB, demoC, samuraiLinton];
