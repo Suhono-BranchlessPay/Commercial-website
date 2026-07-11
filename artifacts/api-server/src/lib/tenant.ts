@@ -26,6 +26,8 @@ export type TenantContext = {
   languages: string[];
   serviceFee: Record<string, unknown>;
   processingFeePaidBy: string;
+  /** platform = website anchors; pos-native = POS anchors, website stores proof only */
+  anchorMode: "platform" | "pos-native";
   status: string;
   /** Formatted pickup line for DoorDash / Square notes. */
   pickupAddressFormatted: string;
@@ -68,6 +70,7 @@ function formatPickupAddress(row: Tenant): string {
 }
 
 export function toTenantContext(row: Tenant): TenantContext {
+  const mode = String(row.anchorMode ?? "platform").toLowerCase();
   return {
     id: row.id,
     slug: row.slug,
@@ -91,6 +94,7 @@ export function toTenantContext(row: Tenant): TenantContext {
     languages: (row.languages as string[]) ?? ["en"],
     serviceFee: (row.serviceFee as Record<string, unknown>) ?? {},
     processingFeePaidBy: row.processingFeePaidBy,
+    anchorMode: mode === "pos-native" ? "pos-native" : "platform",
     status: row.status,
     pickupAddressFormatted: formatPickupAddress(row),
   };
@@ -133,6 +137,12 @@ export function envFallbackTenant(): TenantContext {
     languages: ["en"],
     serviceFee: {},
     processingFeePaidBy: "restaurant",
+    anchorMode:
+      process.env.ANCHOR_MODE?.trim() === "pos-native"
+        ? "pos-native"
+        : id === "samurai"
+          ? "pos-native"
+          : "platform",
     status: "active",
     pickupAddressFormatted: `${address}, ${city}, ${state} ${postcode}`,
   };

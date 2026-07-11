@@ -13,6 +13,7 @@ function isExemptPath(path: string): boolean {
   return (
     path === "/healthz" ||
     path === "/version" ||
+    path === "/anchor-callback" ||
     path.startsWith("/webhooks/")
   );
 }

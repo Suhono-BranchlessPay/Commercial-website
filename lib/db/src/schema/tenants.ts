@@ -43,6 +43,12 @@ export const tenantsTable = pgTable(
     processingFeePaidBy: text("processing_fee_paid_by")
       .notNull()
       .default("restaurant"),
+    /**
+     * Who posts the BP Audit Shield anchor:
+     * - platform: Orderly website anchors after pay (default; Kirin & new tenants)
+     * - pos-native: POS (e.g. Square) already anchors; website only stores proof
+     */
+    anchorMode: text("anchor_mode").notNull().default("platform"),
     status: text("status").notNull().default("active"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },

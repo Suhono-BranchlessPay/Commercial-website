@@ -26,6 +26,9 @@ import {
   auditOrderWithBpShield,
   isBpAnchorConfigured,
   anchorPaidOrder,
+  shouldWebsiteAnchor,
+  pullAnchorByReference,
+  explorerUrlForTx,
 } from "../integrations/branchlesspay";
 import {
   isOwnerConfigured,
@@ -306,7 +309,15 @@ router.post("/orders", async (req, res): Promise<void> => {
           : null,
       squareOrderId: squareResult.squareOrderId,
       squarePaymentId: squareResult.squarePaymentId,
+      squareReferenceId: squareResult.squarePaymentId,
       specialInstructions: input.specialInstructions ?? null,
+      bpAnchorStatus:
+        shouldWebsiteAnchor(tenant.anchorMode) &&
+        isBpAnchorConfigured(tenant.slug)
+          ? "pending"
+          : tenant.anchorMode === "pos-native"
+            ? "pending"
+            : null,
     });
 
     for (const line of lines) {
@@ -387,7 +398,10 @@ router.post("/orders", async (req, res): Promise<void> => {
       }
     }
 
-    if (isBpAnchorConfigured(tenant.slug)) {
+    if (
+      shouldWebsiteAnchor(tenant.anchorMode) &&
+      isBpAnchorConfigured(tenant.slug)
+    ) {
       try {
         const anchor = await anchorPaidOrder({
           orderId,
@@ -411,21 +425,62 @@ router.post("/orders", async (req, res): Promise<void> => {
               bpAnchorId: anchor.anchorId ?? null,
               bpContentHash: anchor.contentHash ?? null,
               bpAnchorStatus: anchor.status ?? "queued",
+              bpTxHash: anchor.txHash ?? null,
+              bpExplorerUrl:
+                anchor.explorerUrl ?? explorerUrlForTx(anchor.txHash) ?? null,
             })
             .where(eq(ordersTable.id, orderId));
           req.log.info(
             { anchorId: anchor.anchorId, status: anchor.status },
-            "BP post-pay anchor queued",
+            "BP post-pay anchor queued (platform mode)",
           );
         } else {
           req.log.error(
             { anchor },
             "BP post-pay anchor failed — order still paid",
           );
+          await db
+            .update(ordersTable)
+            .set({ bpAnchorStatus: "failed" })
+            .where(eq(ordersTable.id, orderId));
         }
       } catch (err) {
         req.log.error({ err }, "BP post-pay anchor threw — order still paid");
       }
+    } else if (tenant.anchorMode === "pos-native") {
+      req.log.info(
+        {
+          squareReferenceId: squareResult.squarePaymentId,
+          orderId,
+        },
+        "pos-native: skipping website anchor; waiting for BP proof webhook/pull",
+      );
+      // Best-effort pull shortly after Square→BP may have anchored
+      const ref = squareResult.squarePaymentId;
+      setTimeout(() => {
+        void (async () => {
+          try {
+            const proof = await pullAnchorByReference({
+              referenceId: ref,
+              tenantSlug: tenant.slug,
+            });
+            if (!proof?.anchorId && !proof?.txHash) return;
+            await db
+              .update(ordersTable)
+              .set({
+                bpAnchorId: proof.anchorId,
+                bpContentHash: proof.contentHash,
+                bpAnchorStatus: proof.status || "anchored",
+                bpTxHash: proof.txHash,
+                bpExplorerUrl:
+                  proof.explorerUrl ?? explorerUrlForTx(proof.txHash),
+              })
+              .where(eq(ordersTable.id, orderId));
+          } catch {
+            /* non-blocking fallback */
+          }
+        })();
+      }, 4000);
     }
 
     if (isOwnerConfigured()) {
@@ -627,7 +682,12 @@ router.get("/owner/integrations", async (req, res): Promise<void> => {
     doordash: { configured: isDoordashConfigured(req.tenant?.slug) },
     branchlesspay: {
       shield: isBranchlesspayConfigured(req.tenant?.slug),
-      anchor: isBpAnchorConfigured(req.tenant?.slug),
+      anchorMode: req.tenant?.anchorMode ?? "platform",
+      /** True when this website will POST anchors (platform mode + license key). */
+      websiteAnchors:
+        (req.tenant?.anchorMode ?? "platform") !== "pos-native" &&
+        isBpAnchorConfigured(req.tenant?.slug),
+      licenseConfigured: isBpAnchorConfigured(req.tenant?.slug),
     },
     owner: { configured: isOwnerConfigured() },
   });

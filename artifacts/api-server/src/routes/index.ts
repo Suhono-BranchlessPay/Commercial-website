@@ -10,6 +10,7 @@ import configRouter from "./config";
 import deliveryRouter from "./delivery";
 import placesRouter from "./places";
 import webhooksRouter from "./webhooks";
+import anchorCallbackRouter from "./anchorCallback";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(configRouter);
 router.use(deliveryRouter);
 router.use(placesRouter);
 router.use(webhooksRouter);
+router.use(anchorCallbackRouter);
 
 export default router;

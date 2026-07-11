@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ArrowRight, CheckCircle2, ShoppingBag, Loader2, Pencil, MapPin, Phone, User, Package, CreditCard } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, ShoppingBag, Loader2, Pencil, MapPin, Phone, User, Package, CreditCard, ShieldCheck } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { SquareCardPayment, type SquareCardHandle } from "@/components/SquareCardPayment";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
@@ -109,6 +109,10 @@ export default function Order() {
   const [successOrderId, setSuccessOrderId] = useState<string | null>(null);
   const [successTotal, setSuccessTotal] = useState<number | null>(null);
   const [successTrackingUrl, setSuccessTrackingUrl] = useState<string | null>(null);
+  const [successAnchor, setSuccessAnchor] = useState<{
+    status: string | null;
+    explorerUrl: string | null;
+  } | null>(null);
   const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [cardReady, setCardReady] = useState(false);
@@ -307,6 +311,19 @@ export default function Order() {
         setSuccessTrackingUrl(
           (response as { doordashTrackingUrl?: string | null }).doordashTrackingUrl ?? null,
         );
+        const r = response as {
+          bpAnchorStatus?: string | null;
+          bpExplorerUrl?: string | null;
+          bpTxHash?: string | null;
+        };
+        setSuccessAnchor({
+          status: r.bpAnchorStatus ?? null,
+          explorerUrl:
+            r.bpExplorerUrl ??
+            (r.bpTxHash
+              ? `https://testnet.monadexplorer.com/tx/${r.bpTxHash}`
+              : null),
+        });
         clearCart();
         setDeliveryQuote(null);
         setStep(3);
@@ -323,8 +340,53 @@ export default function Order() {
     });
   };
 
+  /* Poll for BP anchor proof (platform immediate or pos-native webhook/pull). */
+  useEffect(() => {
+    if (step !== 3 || !successOrderId) return;
+    if (successAnchor?.status === "anchored" && successAnchor.explorerUrl) return;
+
+    let cancelled = false;
+    let attempts = 0;
+    const tick = async () => {
+      attempts += 1;
+      try {
+        const res = await fetch(`${API_BASE}/api/orders/${successOrderId}`);
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          bpAnchorStatus?: string | null;
+          bpExplorerUrl?: string | null;
+          bpTxHash?: string | null;
+        };
+        const explorer =
+          data.bpExplorerUrl ??
+          (data.bpTxHash
+            ? `https://testnet.monadexplorer.com/tx/${data.bpTxHash}`
+            : null);
+        if (data.bpAnchorStatus || explorer) {
+          setSuccessAnchor({
+            status: data.bpAnchorStatus ?? null,
+            explorerUrl: explorer,
+          });
+        }
+        if (data.bpAnchorStatus === "anchored" && explorer) return;
+      } catch {
+        /* ignore */
+      }
+      if (!cancelled && attempts < 12) {
+        window.setTimeout(tick, 3000);
+      }
+    };
+    const t = window.setTimeout(tick, 1500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [step, successOrderId, successAnchor?.status, successAnchor?.explorerUrl]);
+
   /* ══ Done Screen ══ */
   if (step === 3 && successOrderId) {
+    const anchored =
+      successAnchor?.status === "anchored" || Boolean(successAnchor?.explorerUrl);
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-16">
         <ProgressBar step={3} />
@@ -338,7 +400,7 @@ export default function Order() {
             <p className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-1">Order Number</p>
             <p className="font-mono text-2xl font-bold text-primary">{successOrderId.substring(0, 8).toUpperCase()}</p>
           </div>
-          <div className="bg-muted w-full rounded-xl p-4 border border-border mb-8 text-left space-y-2">
+          <div className="bg-muted w-full rounded-xl p-4 border border-border mb-3 text-left space-y-2">
             <div className="flex items-center gap-2 text-sm text-foreground">
               <Package className="h-4 w-4 text-primary" />
               <span className="font-semibold capitalize">{values.orderType}</span>
@@ -355,6 +417,35 @@ export default function Order() {
               </div>
             )}
           </div>
+          {anchored ? (
+            <div className="w-full rounded-xl border border-primary/30 bg-primary/5 p-4 mb-6 text-left">
+              <div className="flex items-start gap-2">
+                <ShieldCheck className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-foreground">
+                    Verified &amp; permanently recorded
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    This payment is anchored on the BranchlessPay audit trail.
+                  </p>
+                  {successAnchor?.explorerUrl && (
+                    <a
+                      href={successAnchor.explorerUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-primary font-semibold underline mt-2 inline-block"
+                    >
+                      View on Monad explorer →
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground mb-6">
+              Securing your payment on the audit trail…
+            </p>
+          )}
           <p className="text-xs text-muted-foreground mb-4">
             Your card has been charged ${(successTotal ?? total).toFixed(2)}.
             {values.orderType === "delivery"

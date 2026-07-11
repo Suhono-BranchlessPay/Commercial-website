@@ -41,6 +41,8 @@ export const ordersTable = pgTable("orders", {
   paymentStatus: text("payment_status").notNull().default("unpaid"),
   squareOrderId: text("square_order_id"),
   squarePaymentId: text("square_payment_id"),
+  /** Square payment id (or other POS ref) used to match BP pos-native webhooks. */
+  squareReferenceId: text("square_reference_id"),
   deliveryFee: real("delivery_fee").notNull().default(0),
   doordashExternalDeliveryId: text("doordash_external_delivery_id"),
   doordashTrackingUrl: text("doordash_tracking_url"),
@@ -49,6 +51,8 @@ export const ordersTable = pgTable("orders", {
   bpAnchorId: text("bp_anchor_id"),
   bpContentHash: text("bp_content_hash"),
   bpAnchorStatus: text("bp_anchor_status"),
+  bpTxHash: text("bp_tx_hash"),
+  bpExplorerUrl: text("bp_explorer_url"),
   specialInstructions: text("special_instructions"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
