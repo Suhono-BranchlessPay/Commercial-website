@@ -263,11 +263,10 @@ export function parseStorefrontConfig(
   }
 
   // Hide delivery CTAs unless theme.order_types (or identity.order_types) includes "delivery"
-  const identity = asRecord(t.identity);
   const orderTypesRaw = Array.isArray(t.order_types)
     ? t.order_types
-    : Array.isArray(identity?.order_types)
-      ? identity!.order_types
+    : Array.isArray(identity.order_types)
+      ? identity.order_types
       : ["pickup"];
   const deliveryEnabled = orderTypesRaw.some(
     (v) => String(v).toLowerCase() === "delivery",
