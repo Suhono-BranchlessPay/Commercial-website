@@ -1,4 +1,5 @@
 import { FooterConfig } from "@/variants/types/config";
+import { PoweredByOrderly } from "@/components/PoweredByOrderly";
 
 export function FooterDark({ data }: { data: FooterConfig["data"] }) {
   return (
@@ -36,7 +37,7 @@ export function FooterDark({ data }: { data: FooterConfig["data"] }) {
         
         <div className="mt-12 pt-8 border-t border-zinc-900 text-sm flex flex-col md:flex-row justify-between items-center gap-4">
           <p>© {new Date().getFullYear()} {data.logo}. All rights reserved.</p>
-          <p className="text-zinc-600">Powered by Orderly</p>
+          <PoweredByOrderly variant="dark" />
         </div>
       </div>
     </footer>

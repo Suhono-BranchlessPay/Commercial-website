@@ -1,5 +1,7 @@
 import { FooterConfig } from "@/types/config";
 
+const ORDERLY_URL = "https://orderlyfoods.com";
+
 export function FooterLight({ data }: { data: FooterConfig["data"] }) {
   return (
     <footer className="bg-muted text-muted-foreground py-16">
@@ -23,9 +25,16 @@ export function FooterLight({ data }: { data: FooterConfig["data"] }) {
 
         <div className="w-full max-w-md h-px bg-border my-4" />
 
-        <p className="text-xs uppercase tracking-widest font-bold opacity-50">
-          Powered by Orderly
-        </p>
+        <a
+          href={ORDERLY_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 text-xs uppercase tracking-widest font-bold opacity-50 hover:opacity-100 transition-opacity"
+          aria-label="Powered by Orderly Foods"
+        >
+          <span>Powered by</span>
+          <img src="/orderly-powered.png" alt="Orderly Foods" className="h-5 w-auto" />
+        </a>
       </div>
     </footer>
   );

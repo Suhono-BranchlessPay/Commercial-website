@@ -1,4 +1,5 @@
 import { FooterConfig } from "@/variants/types/config";
+import { PoweredByOrderly } from "@/components/PoweredByOrderly";
 
 export function FooterLight({ data }: { data: FooterConfig["data"] }) {
   return (
@@ -23,9 +24,7 @@ export function FooterLight({ data }: { data: FooterConfig["data"] }) {
 
         <div className="w-full max-w-md h-px bg-border my-4" />
 
-        <p className="text-xs uppercase tracking-widest font-bold opacity-50">
-          Powered by Orderly
-        </p>
+        <PoweredByOrderly variant="light" />
       </div>
     </footer>
   );

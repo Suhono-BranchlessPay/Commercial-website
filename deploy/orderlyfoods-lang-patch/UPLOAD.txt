@@ -1,0 +1,17 @@
+﻿Upload these files to Hostinger File Manager for orderlyfoods.com (public_html):
+
+1. index.html              -> replace public_html/index.html
+2. assets/index-GxDQVBBw.js -> replace public_html/assets/index-GxDQVBBw.js
+   (Do NOT rename the JS file — index.html still points to index-GxDQVBBw.js)
+3. orderly-logo.png         -> replace public_html/orderly-logo.png
+   (optional) orderly-logo-transparent.png -> public_html/orderly-logo-transparent.png
+
+Logo:
+- Uses the original fork badge + aligned ORDERLY / FOODS.COM lockup
+- Served as /orderly-logo.png (header + footer)
+
+Language UI:
+- Desktop / default: English
+- Mobile: follows phone language if supported (id, zh, es, th, my, vi, hi, ne, fil, ar), else English
+- Manual language dropdown choice is remembered (localStorage.orderly_lang)
+- Dropdown restyled as a compact pill control (CSS injected in index.html)

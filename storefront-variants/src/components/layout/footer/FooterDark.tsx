@@ -1,5 +1,7 @@
 import { FooterConfig } from "@/types/config";
 
+const ORDERLY_URL = "https://orderlyfoods.com";
+
 export function FooterDark({ data }: { data: FooterConfig["data"] }) {
   return (
     <footer className="bg-zinc-950 text-zinc-400 py-12 md:py-16 border-t border-zinc-900">
@@ -36,7 +38,16 @@ export function FooterDark({ data }: { data: FooterConfig["data"] }) {
         
         <div className="mt-12 pt-8 border-t border-zinc-900 text-sm flex flex-col md:flex-row justify-between items-center gap-4">
           <p>© {new Date().getFullYear()} {data.logo}. All rights reserved.</p>
-          <p className="text-zinc-600">Powered by Orderly</p>
+          <a
+            href={ORDERLY_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 text-zinc-500 hover:text-zinc-300 transition-colors"
+            aria-label="Powered by Orderly Foods"
+          >
+            <span className="text-[10px] uppercase tracking-widest font-semibold">Powered by</span>
+            <img src="/orderly-powered-on-dark.png" alt="Orderly Foods" className="h-5 w-auto" />
+          </a>
         </div>
       </div>
     </footer>
