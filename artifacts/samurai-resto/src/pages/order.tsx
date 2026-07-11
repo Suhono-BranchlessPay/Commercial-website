@@ -118,6 +118,7 @@ export default function Order() {
   const [cardReady, setCardReady] = useState(false);
   const [checkoutEnabled, setCheckoutEnabled] = useState<boolean | null>(null);
   const [tenantId, setTenantId] = useState("default");
+  const [orderTypes, setOrderTypes] = useState<("pickup" | "delivery")[]>(["pickup"]);
   const [addressUnit, setAddressUnit] = useState("");
   const cardRef = useRef<SquareCardHandle>(null);
 
@@ -142,9 +143,20 @@ export default function Order() {
 
     fetch(`${API_BASE}/api/config/checkout`)
       .then((r) => r.json())
-      .then((c: { tenantId?: string }) => {
+      .then((c: {
+        tenantId?: string;
+        orderTypes?: ("pickup" | "delivery")[];
+        deliveryEnabled?: boolean;
+      }) => {
         const tid = c.tenantId ?? "default";
         setTenantId(tid);
+        const types =
+          Array.isArray(c.orderTypes) && c.orderTypes.length > 0
+            ? c.orderTypes.filter((t) => t === "pickup" || t === "delivery")
+            : c.deliveryEnabled
+              ? (["pickup", "delivery"] as const)
+              : (["pickup"] as const);
+        setOrderTypes([...types]);
         const saved = loadCheckoutProfile(tid);
         if (saved) {
           form.reset({
@@ -564,17 +576,29 @@ export default function Order() {
         {step === 1 && (
           <Form {...form}>
             <div className="space-y-5">
-              {/* Pickup or Delivery */}
+              {/* Pickup (and Delivery when theme.order_types includes it) */}
               <div className="bg-card border border-border rounded-2xl p-6">
-                <h2 className="font-serif text-xl text-foreground mb-4">How do you want it?</h2>
+                <h2 className="font-serif text-xl text-foreground mb-4">
+                  {orderTypes.includes("delivery")
+                    ? "How do you want it?"
+                    : "Pickup order"}
+                </h2>
                 <FormField
                   control={form.control}
                   name="orderType"
                   render={({ field }) => (
                     <FormItem>
                       <FormControl>
-                        <RadioGroup onValueChange={field.onChange} defaultValue={field.value} className="grid grid-cols-2 gap-4">
-                          {(["pickup", "delivery"] as const).map(type => (
+                        <RadioGroup
+                          onValueChange={field.onChange}
+                          value={field.value}
+                          className={
+                            orderTypes.length > 1
+                              ? "grid grid-cols-2 gap-4"
+                              : "grid grid-cols-1 gap-4"
+                          }
+                        >
+                          {orderTypes.map(type => (
                             <FormItem key={type} className="flex items-center space-x-0 space-y-0">
                               <FormControl><RadioGroupItem value={type} className="peer sr-only" /></FormControl>
                               <FormLabel className="flex flex-1 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-border bg-popover p-5 hover:border-primary/50 peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/5 transition-all">

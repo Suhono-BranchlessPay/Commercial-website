@@ -70,6 +70,8 @@ export type TenantPublicConfig = {
   faviconUrl?: string | null;
   hours?: { weekly?: TenantHoursDay[] } | null;
   googleMapsApiKey: string | null;
+  orderTypes?: ("pickup" | "delivery")[];
+  deliveryEnabled?: boolean;
   places: {
     country: string;
     locationBias: { lat: number; lng: number; radiusMeters: number };
@@ -78,7 +80,7 @@ export type TenantPublicConfig = {
     radiusMiles: number;
     restaurantLat: number;
     restaurantLng: number;
-  };
+  } | null;
   restaurant: {
     address: string | null;
     city: string | null;
@@ -319,7 +321,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         `Order directly from ${brandName}. No hidden marketplace fees.`,
       aboutText:
         (typeof theme?.aboutText === "string" && theme.aboutText) ||
-        `Welcome to ${brandName}. Order fresh Japanese favorites online for pickup or delivery.`,
+        `Welcome to ${brandName}. Order fresh Japanese favorites online for pickup.`,
       phoneDisplay: formatPhoneDisplay(phone) || "",
       phoneTel: phone || "",
       addressLine,

@@ -42,7 +42,11 @@ import {
   structuredAddressSchema,
 } from "../lib/address";
 import { displayName } from "../lib/phone";
-import { envFallbackTenant, getTenantId } from "../lib/tenant";
+import {
+  envFallbackTenant,
+  getTenantId,
+  isOrderTypeEnabled,
+} from "../lib/tenant";
 
 const router = Router();
 
@@ -78,6 +82,16 @@ router.post("/orders", async (req, res): Promise<void> => {
   const customerDisplayName = displayName(input.firstName, input.lastName);
 
   try {
+    if (!isOrderTypeEnabled(tenant.theme, input.orderType)) {
+      res.status(400).json({
+        error:
+          input.orderType === "delivery"
+            ? "Delivery is temporarily unavailable. Please choose pickup."
+            : "This order type is not available.",
+      });
+      return;
+    }
+
     if (input.orderType === "delivery") {
       if (!input.address) {
         res.status(400).json({ error: "Delivery address is required" });

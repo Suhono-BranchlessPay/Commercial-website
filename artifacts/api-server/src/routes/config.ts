@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   getTenantId,
   GOOGLE_MAPS_API_KEY,
+  resolveOrderTypes,
 } from "../lib/tenant";
 
 const router = Router();
@@ -15,6 +16,8 @@ router.get("/config/checkout", (req, res): void => {
   const radiusMiles =
     tenant?.serviceAreaRadius ??
     Number(process.env.DELIVERY_RADIUS_MILES ?? "12");
+  const orderTypes = resolveOrderTypes(tenant?.theme);
+  const deliveryEnabled = orderTypes.includes("delivery");
 
   res.json({
     tenantId,
@@ -25,6 +28,9 @@ router.get("/config/checkout", (req, res): void => {
     hours: tenant?.hours ?? null,
     googleMapsApiKey: GOOGLE_MAPS_API_KEY || null,
     anchorMode: tenant?.anchorMode ?? "platform",
+    /** Config-driven: ["pickup"] now; add "delivery" when Stripe Connect is live. */
+    orderTypes,
+    deliveryEnabled,
     places: {
       country: "us",
       locationBias: {
@@ -33,11 +39,13 @@ router.get("/config/checkout", (req, res): void => {
         radiusMeters: 25000,
       },
     },
-    delivery: {
-      radiusMiles,
-      restaurantLat: lat,
-      restaurantLng: lng,
-    },
+    delivery: deliveryEnabled
+      ? {
+          radiusMiles,
+          restaurantLat: lat,
+          restaurantLng: lng,
+        }
+      : null,
     restaurant: tenant
       ? {
           address: tenant.address,

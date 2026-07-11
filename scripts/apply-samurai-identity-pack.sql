@@ -24,11 +24,10 @@ UPDATE tenants SET
     "sections": ["hero", "menu_download", "featured", "reviews", "story"]
   },
   "copy": {
-    "hero_headline": ["Fresh Sushi.", "Hot Hibachi.", "Delivered Fast."],
+    "hero_headline": ["Fresh Sushi.", "Hot Hibachi.", "Order Pickup."],
     "hero_subheadline": "Order directly from Samurai. No hidden marketplace fees. Fresh from our kitchen.",
     "hero_ctas": [
       {"label": "Order Pickup", "href": "/order", "style": "primary"},
-      {"label": "Order Delivery", "href": "/order", "style": "primary"},
       {"label": "View Menu", "href": "/menu", "style": "outline"}
     ],
     "featured_eyebrow": "Chef's Selection",
@@ -48,7 +47,8 @@ UPDATE tenants SET
     ],
     "menu_page_title": "Our Menu",
     "menu_page_subtitle": "From our sizzling hibachi grills to our masterfully crafted sushi rolls."
-  }
+  },
+  "order_types": ["pickup"]
 }
 $$::jsonb
 WHERE id = 'samurai';

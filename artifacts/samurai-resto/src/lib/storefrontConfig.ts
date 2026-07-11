@@ -256,16 +256,32 @@ export function parseStorefrontConfig(
   }
 
   if (!heroCtas.length) {
-    heroCtas = isKirin
-      ? [
-          { label: "Order Pickup", href: "/order", style: "primary" },
-          { label: "View Menu", href: "/menu", style: "outline" },
-        ]
-      : [
-          { label: "Order Pickup", href: "/order", style: "primary" },
-          { label: "Order Delivery", href: "/order", style: "primary" },
-          { label: "View Menu", href: "/menu", style: "outline" },
-        ];
+    heroCtas = [
+      { label: "Order Pickup", href: "/order", style: "primary" },
+      { label: "View Menu", href: "/menu", style: "outline" },
+    ];
+  }
+
+  // Hide delivery CTAs unless theme.order_types (or identity.order_types) includes "delivery"
+  const identity = asRecord(t.identity);
+  const orderTypesRaw = Array.isArray(t.order_types)
+    ? t.order_types
+    : Array.isArray(identity?.order_types)
+      ? identity!.order_types
+      : ["pickup"];
+  const deliveryEnabled = orderTypesRaw.some(
+    (v) => String(v).toLowerCase() === "delivery",
+  );
+  if (!deliveryEnabled) {
+    heroCtas = heroCtas.filter(
+      (c) => !/delivery/i.test(c.label) && !/deliver/i.test(c.href),
+    );
+    if (!heroCtas.some((c) => /pickup|order/i.test(c.label))) {
+      heroCtas = [
+        { label: "Order Pickup", href: "/order", style: "primary" },
+        ...heroCtas.filter((c) => !/order/i.test(c.label)),
+      ];
+    }
   }
 
   const storyBody = strArr(copy.story_body);

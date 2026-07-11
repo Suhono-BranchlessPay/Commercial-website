@@ -12,7 +12,11 @@ import {
   OUT_OF_RADIUS_MESSAGE,
   structuredAddressSchema,
 } from "../lib/address";
-import { getTenantId, envFallbackTenant } from "../lib/tenant";
+import {
+  getTenantId,
+  envFallbackTenant,
+  isOrderTypeEnabled,
+} from "../lib/tenant";
 
 const router = Router();
 
@@ -32,6 +36,16 @@ const quoteInputSchema = z.object({
 });
 
 router.post("/delivery/quote", async (req, res): Promise<void> => {
+  const tenant = req.tenant ?? envFallbackTenant();
+
+  if (!isOrderTypeEnabled(tenant.theme, "delivery")) {
+    res.status(403).json({
+      error:
+        "Delivery is temporarily unavailable. Please choose pickup.",
+    });
+    return;
+  }
+
   if (!isDoordashConfigured(req.tenant?.slug ?? getTenantId())) {
     res.status(503).json({
       error:
@@ -47,7 +61,6 @@ router.post("/delivery/quote", async (req, res): Promise<void> => {
   }
 
   const input = parsed.data;
-  const tenant = req.tenant ?? envFallbackTenant();
   const tenantId = tenant.id;
 
   if (

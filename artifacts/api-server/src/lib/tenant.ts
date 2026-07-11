@@ -239,3 +239,39 @@ export function tenantSecret(slug: string, key: string): string | undefined {
   const global = process.env[key];
   return global?.trim() || undefined;
 }
+
+export type OrderType = "pickup" | "delivery";
+
+/**
+ * Allowed checkout modes from tenants.theme.order_types.
+ * Default is pickup-only until Stripe Connect can settle DoorDash cleanly.
+ * Re-enable delivery by setting theme.order_types to include "delivery".
+ */
+export function resolveOrderTypes(
+  theme: Record<string, unknown> | null | undefined,
+): OrderType[] {
+  const identity =
+    theme?.identity && typeof theme.identity === "object"
+      ? (theme.identity as Record<string, unknown>)
+      : null;
+  const raw =
+    Array.isArray(theme?.order_types) && (theme!.order_types as unknown[]).length
+      ? theme!.order_types
+      : identity?.order_types;
+  if (!Array.isArray(raw) || raw.length === 0) return ["pickup"];
+  const allowed = new Set<OrderType>();
+  for (const v of raw) {
+    const s = String(v).toLowerCase().trim();
+    if (s === "pickup" || s === "delivery") allowed.add(s);
+  }
+  if (allowed.size === 0) return ["pickup"];
+  // Stable order: pickup first
+  return (["pickup", "delivery"] as const).filter((t) => allowed.has(t));
+}
+
+export function isOrderTypeEnabled(
+  theme: Record<string, unknown> | null | undefined,
+  orderType: string,
+): boolean {
+  return resolveOrderTypes(theme).includes(orderType as OrderType);
+}
