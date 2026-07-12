@@ -53,6 +53,9 @@ export async function buildReportSummary(input: {
   const anchorQueued = orders.filter(
     (o) => o.bpAnchorStatus && !o.chainTxHash,
   ).length;
+  const untracked = orders.filter(
+    (o) => !o.bpAnchorStatus && !o.chainTxHash,
+  ).length;
 
   return {
     range: input.range,
@@ -70,6 +73,7 @@ export async function buildReportSummary(input: {
     anchors: {
       with_chain_tx: anchored,
       pending_or_queued: anchorQueued,
+      untracked,
       rate:
         totalOrders > 0 ? Math.round((anchored / totalOrders) * 1000) / 10 : 0,
     },

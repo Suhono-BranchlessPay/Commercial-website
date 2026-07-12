@@ -35,6 +35,8 @@ export const tenantsTable = pgTable(
     pickupBusinessName: text("pickup_business_name"),
     posType: text("pos_type").notNull().default("square"),
     dataMode: text("data_mode").notNull().default("pos-full"),
+    /** platform = Orderly anchors; pos-native = POS/Square anchors (Samurai). */
+    anchorMode: text("anchor_mode").notNull().default("platform"),
     languages: jsonb("languages").$type<string[]>().notNull().default(["en"]),
     serviceFee: jsonb("service_fee")
       .$type<Record<string, unknown>>()

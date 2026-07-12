@@ -46,6 +46,18 @@ BRANCHLESSPAY_WEBHOOK_SECRET: "<webhook-secret>", // for pos-native proof callba
 
 Samurai stays `anchor_mode=pos-native` (Square↔BP already anchors; website stores proof only).
 
+## Proof-back (implemented)
+
+| Path | Endpoint |
+|------|----------|
+| Webhook from BP | `POST /api/anchor-callback` (aliases: `/api/webhooks/branchlesspay`, `/api/webhooks/anchor-callback`) |
+| Auth | `Authorization: Bearer <BRANCHLESSPAY_WEBHOOK_SECRET>` or `X-BranchlessPay-Secret` |
+| Poll / dashboard sync | `POST /api/dashboard/anchors/sync` + auto-poll on anchors report |
+
+Payload: `reference_id` = Orderly order UUID, plus `tx_hash` / `chain_tx_hash`, `status`, optional `explorer_url`, `anchor_id`.
+
+See `deploy/ANCHOR_MODE.md`.
+
 ## Modes
 
 | Mode | Who anchors | Tenants |

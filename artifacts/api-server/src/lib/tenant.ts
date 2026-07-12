@@ -23,6 +23,8 @@ export type TenantContext = {
   pickupBusinessName: string | null;
   posType: string;
   dataMode: string;
+  /** platform | pos-native — see SUMBER §4.3 */
+  anchorMode: string;
   languages: string[];
   serviceFee: Record<string, unknown>;
   processingFeePaidBy: string;
@@ -88,6 +90,7 @@ export function toTenantContext(row: Tenant): TenantContext {
     pickupBusinessName: row.pickupBusinessName,
     posType: row.posType,
     dataMode: row.dataMode,
+    anchorMode: (row as { anchorMode?: string | null }).anchorMode ?? "platform",
     languages: (row.languages as string[]) ?? ["en"],
     serviceFee: (row.serviceFee as Record<string, unknown>) ?? {},
     processingFeePaidBy: row.processingFeePaidBy,
@@ -130,6 +133,7 @@ export function envFallbackTenant(): TenantContext {
     pickupBusinessName: name,
     posType: "square",
     dataMode: "pos-full",
+    anchorMode: id === "samurai" ? "pos-native" : "platform",
     languages: ["en"],
     serviceFee: {},
     processingFeePaidBy: "restaurant",

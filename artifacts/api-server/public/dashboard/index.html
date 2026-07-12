@@ -136,6 +136,10 @@
     <div class="panel">
       <div class="panel-h"><h2>Anchor verification</h2><span class="live"><span class="pulse"></span>On-chain</span></div>
       <div id="anchorStats" class="empty">Loading…</div>
+      <div style="padding:0 20px 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="btn ghost" id="syncAnchorsBtn" type="button">Sync anchors from BP</button>
+        <span style="font-size:12px;color:var(--muted)">— = no proof recorded (legacy / never tracked). Pending = awaiting proof-back.</span>
+      </div>
       <table>
         <thead><tr><th>Order</th><th class="hide-sm">When</th><th class="num">Total</th><th>Status</th><th>Explorer</th></tr></thead>
         <tbody id="anchorRows"></tbody>
@@ -303,9 +307,10 @@ async function loadAll() {
       ['Total', money(t.total_cents), 'Incl. tip/tax'],
       ['Anchored', (a.with_chain_tx || 0) + ' / ' + (t.orders || 0), (a.rate || 0) + '% with tx'],
       ['Pending anchor', a.pending_or_queued || 0, 'Queued / no tx yet'],
+      ['Untracked', a.untracked || 0, 'No status (legacy)'],
     ].map(([k,v,s]) => '<div class="stat"><div class="k">' + k + '</div><div class="v">' + v + '</div><div class="s">' + s + '</div></div>').join('');
 
-    $('anchorStats').innerHTML = '<div style="padding:14px 20px;font-size:14px">Paid orders with chain tx: <b>' + (a.with_chain_tx || 0) + '</b> · Pending/queued: <b>' + (a.pending_or_queued || 0) + '</b> · Rate: <b>' + (a.rate || 0) + '%</b></div>';
+    $('anchorStats').innerHTML = '<div style="padding:14px 20px;font-size:14px">Paid orders with chain tx: <b>' + (a.with_chain_tx || 0) + '</b> · Pending/queued: <b>' + (a.pending_or_queued || 0) + '</b> · Untracked (—): <b>' + (a.untracked || 0) + '</b> · Rate: <b>' + (a.rate || 0) + '%</b></div>';
     const arows = anchors.orders || [];
     $('anchorRows').innerHTML = arows.length ? arows.map((o) => {
       const link = o.explorer_url ? '<a href="' + o.explorer_url + '" target="_blank" rel="noopener noreferrer">' + (o.chain_tx_hash ? o.chain_tx_hash.slice(0, 10) + '…' : 'open') + '</a>' : '—';
@@ -355,6 +360,16 @@ $('refreshBtn').addEventListener('click', loadAll);
 $('csvBtn').addEventListener('click', exportCsv);
 $('range').addEventListener('change', loadAll);
 $('tenant').addEventListener('change', loadAll);
+$('syncAnchorsBtn').addEventListener('click', async () => {
+  flash('');
+  try {
+    const data = await api('/anchors/sync?' + qs(), { method: 'POST', body: '{}' });
+    flash('Anchor sync: ' + (data.updated || 0) + ' updated · ' + (data.scanned || 0) + ' scanned' + (data.errors ? ' · ' + data.errors + ' BP errors' : ''));
+    await loadAll();
+  } catch (e) {
+    flash(e.message || 'Anchor sync failed');
+  }
+});
 
 (async function boot() {
   try {

@@ -24,6 +24,7 @@ import {
 } from "../lib/dashboardReports";
 import { buildCustomerIntelligence } from "../lib/customerIntelligence";
 import { requireOrderlyDashboardHost } from "../lib/dashboardHost";
+import { syncMissingAnchorProofs } from "../lib/anchorProof";
 
 declare global {
   namespace Express {
@@ -268,11 +269,40 @@ router.get(
       const tenantId = scopedTenant(req, res);
       if (tenantId === undefined) return;
       const range = parseRange(req.query.range);
+      // Light proof-back poll so pos-native / queued rows can catch up.
+      try {
+        await syncMissingAnchorProofs({ tenantId, limit: 20 });
+      } catch (syncErr) {
+        req.log?.warn({ err: syncErr }, "Anchor auto-sync skipped");
+      }
       const data = await buildAnchorReport({ tenantId, range });
       res.json(data);
     } catch (err) {
       req.log?.error({ err }, "Dashboard anchors report failed");
       res.status(500).json({ error: "Failed to build anchor report" });
+    }
+  },
+);
+
+router.post(
+  "/anchors/sync",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const tenantId = scopedTenant(req, res);
+      if (tenantId === undefined) return;
+      const limitRaw =
+        typeof req.body?.limit === "number"
+          ? req.body.limit
+          : Number(req.query.limit);
+      const result = await syncMissingAnchorProofs({
+        tenantId,
+        limit: Number.isFinite(limitRaw) ? limitRaw : 50,
+      });
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      req.log?.error({ err }, "Dashboard anchor sync failed");
+      res.status(500).json({ error: "Failed to sync anchors from BP" });
     }
   },
 );
