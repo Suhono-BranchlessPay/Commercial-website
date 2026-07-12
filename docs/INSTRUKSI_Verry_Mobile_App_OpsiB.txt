@@ -1,6 +1,11 @@
 INSTRUKSI LENGKAP — MOBILE APP ORDERLY (Opsi B: White-Label Branded per Restoran)
 ==================================================================================
 
+*** SUPERSEDED ***
+Dokumen ini DIGANTIKAN oleh docs/ORDERLY_SUMBER_KEBENARAN.md (11 Juli 2026).
+Prioritas aktif mobile = §3 P1 di SUMBER KEBENARAN. Kalau ada konflik, SUMBER KEBENARAN menang.
+*** SUPERSEDED ***
+
 KEPUTUSAN MALIK (final): Model B — app branded per restoran, dari SATU codebase + config tenant.
 Tiap restoran punya app sendiri di App Store / Play Store (nama & logo restoran sendiri),
 tapi mesinnya SATU. Ini persis model Owner.com (sudah divalidasi — lihat "Temuan Owner" di bawah).

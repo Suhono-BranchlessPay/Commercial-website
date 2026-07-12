@@ -1,5 +1,7 @@
 # Spec — Anchor Mode Per Tenant (Orderly)
 
+> **SUPERSEDED for priority/status:** use [`ORDERLY_SUMBER_KEBENARAN.md`](./ORDERLY_SUMBER_KEBENARAN.md) §4.3 as the winning source of truth. This file is kept as a short technical appendix; if anything conflicts, SUMBER KEBENARAN wins.
+
 Architecture rule. Do not invent a new BP API key per restaurant.
 
 ## Model (agreed with BranchlessPay)

@@ -1,6 +1,11 @@
 INSTRUKSI UNTUK VERRY — AUDIT ARSITEKTUR, NONAKTIFKAN DELIVERY SEMENTARA, & SIAPKAN MOBILE APP
 ================================================================================================
 
+*** SUPERSEDED ***
+Dokumen ini DIGANTIKAN oleh docs/ORDERLY_SUMBER_KEBENARAN.md (11 Juli 2026).
+Kalau ada konflik, SUMBER KEBENARAN menang. Simpan file ini hanya sebagai arsip.
+*** SUPERSEDED ***
+
 STATUS (Juli 2026):
 - Bagian 1 (audit aliran uang) & Bagian 2 (delivery-off) = [SELESAI — 1d82e52]
   Delivery dimatikan via theme.order_types = ["pickup"]; kode DoorDash tetap ada.
