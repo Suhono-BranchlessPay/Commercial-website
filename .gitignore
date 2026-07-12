@@ -50,3 +50,13 @@ Thumbs.db
 
 # Uploaded menu photos (runtime data, not source)
 artifacts/api-server/uploads/
+
+# Local secrets — never commit
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+!**/.env.example
+!**/.env.sandbox.example
+!**/.env*.example
