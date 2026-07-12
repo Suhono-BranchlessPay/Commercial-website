@@ -1,11 +1,13 @@
 /**
  * BranchlessPay integrations:
  * 1) Optional pre-pay Audit Shield fraud check (legacy soft gate)
- * 2) Post-pay blockchain anchor via POST /api/v1/anchor (required path per Orderly brief)
+ * 2) Post-pay blockchain anchor via POST /api/v1/anchor (platform mode)
+ * 3) Proof poll via GET /api/v1/anchor/{id} or ?reference_id= (proof-back)
  *
  * Secrets (per tenant, then global fallback):
  *   BRANCHLESSPAY_LICENSE_KEY  — Bearer for /api/v1/anchor
  *   BRANCHLESSPAY_API_KEY + BRANCHLESSPAY_MERCHANT_ID — optional shield pre-check
+ *   BRANCHLESSPAY_WEBHOOK_SECRET — inbound proof callback (pos-native)
  */
 
 import { createHash } from "crypto";
@@ -62,6 +64,53 @@ export interface AnchorPaidOrderResult {
   txHash?: string | null;
   status?: string;
   error?: string;
+}
+
+export interface AnchorProof {
+  ok: boolean;
+  anchorId?: string | null;
+  contentHash?: string | null;
+  txHash?: string | null;
+  status?: string | null;
+  explorerUrl?: string | null;
+  error?: string;
+}
+
+export function mapBpStatus(
+  apiStatus: string | null | undefined,
+  hasTx: boolean,
+): string {
+  if (hasTx) return "anchored";
+  const status = (apiStatus || "").toLowerCase();
+  if (["anchored", "confirmed", "completed"].includes(status)) return "anchored";
+  if (status === "failed" || status === "error") return "failed";
+  if (status === "queued") return "queued";
+  if (status === "pending" || status === "processing") return "pending";
+  if (status) return status;
+  return "pending";
+}
+
+function parseAnchorResponse(data: Record<string, unknown>): AnchorProof {
+  const txRaw = data.tx_hash ?? data.chain_tx_hash ?? data.txHash;
+  const txHash =
+    typeof txRaw === "string" && txRaw.trim() && txRaw !== "pending"
+      ? txRaw.trim()
+      : null;
+  const statusRaw = data.status ?? data.anchor_status;
+  const explorerRaw = data.explorer_url ?? data.explorerUrl;
+  const anchorRaw = data.anchor_id ?? data.anchorId ?? data.id;
+  const hashRaw = data.content_hash ?? data.contentHash;
+  return {
+    ok: data.ok !== false,
+    anchorId: typeof anchorRaw === "string" ? anchorRaw : null,
+    contentHash: typeof hashRaw === "string" ? hashRaw : null,
+    txHash,
+    status:
+      typeof statusRaw === "string"
+        ? mapBpStatus(statusRaw, Boolean(txHash))
+        : mapBpStatus(null, Boolean(txHash)),
+    explorerUrl: typeof explorerRaw === "string" ? explorerRaw : null,
+  };
 }
 
 function licenseKey(slug: string): string | undefined {
@@ -227,4 +276,90 @@ export async function anchorPaidOrder(
       error: err instanceof Error ? err.message : "BP anchor request failed",
     };
   }
+}
+
+async function getJson(
+  url: string,
+  key: string,
+): Promise<{ ok: boolean; data?: Record<string, unknown>; error?: string }> {
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        Accept: "application/json",
+      },
+    });
+    const text = await response.text();
+    if (response.status !== 200) {
+      return { ok: false, error: `BP GET ${response.status}: ${text.slice(0, 200)}` };
+    }
+    const data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+    return { ok: true, data };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "BP GET failed",
+    };
+  }
+}
+
+/**
+ * Poll BP for anchor proof by anchor_id and/or reference_id.
+ * Tries several URL shapes so we work with Audit Shield + Square↔BP paths.
+ */
+export async function fetchAnchorProof(input: {
+  tenantSlug: string;
+  anchorId?: string | null;
+  referenceId?: string | null;
+}): Promise<AnchorProof> {
+  const key = licenseKey(input.tenantSlug);
+  if (!key) {
+    return { ok: false, error: "BRANCHLESSPAY_LICENSE_KEY not configured" };
+  }
+
+  const urls: string[] = [];
+  if (input.anchorId) {
+    urls.push(`${BP_ANCHOR_URL}/${encodeURIComponent(input.anchorId)}`);
+  }
+  if (input.referenceId) {
+    const ref = encodeURIComponent(input.referenceId);
+    urls.push(`${BP_ANCHOR_URL}?reference_id=${ref}`);
+    urls.push(`${BP_ANCHOR_URL}/by-reference/${ref}`);
+    // Some BP builds treat reference_id as the path id when no separate anchor_id.
+    if (!input.anchorId || input.anchorId !== input.referenceId) {
+      urls.push(`${BP_ANCHOR_URL}/${ref}`);
+    }
+  }
+
+  if (urls.length === 0) {
+    return { ok: false, error: "missing anchor_id and reference_id" };
+  }
+
+  let lastError = "not found";
+  for (const url of urls) {
+    const result = await getJson(url, key);
+    if (!result.ok || !result.data) {
+      lastError = result.error || lastError;
+      continue;
+    }
+    // List envelope: { anchors: [...] } or { data: [...] }
+    const list =
+      (Array.isArray(result.data.anchors) && result.data.anchors) ||
+      (Array.isArray(result.data.data) && result.data.data) ||
+      (Array.isArray(result.data.results) && result.data.results) ||
+      null;
+    if (list && list.length > 0) {
+      const first = list[0];
+      if (first && typeof first === "object") {
+        return parseAnchorResponse(first as Record<string, unknown>);
+      }
+    }
+    const proof = parseAnchorResponse(result.data);
+    if (proof.txHash || proof.anchorId || proof.status) {
+      return proof;
+    }
+  }
+
+  return { ok: false, error: lastError };
 }

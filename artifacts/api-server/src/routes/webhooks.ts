@@ -9,6 +9,10 @@ import {
   isSquareConfigured,
   syncSquareOrderFromOwnerStatus,
 } from "../integrations/square";
+import {
+  applyAnchorProof,
+  parseAnchorCallbackBody,
+} from "../lib/anchorProof";
 
 const router = Router();
 
@@ -21,6 +25,32 @@ function verifyWebhookAuth(authHeader: string | undefined): boolean {
   const decoded = Buffer.from(authHeader.slice(6), "base64").toString("utf8");
   const [user, pass] = decoded.split(":");
   return user === WEBHOOK_USER && pass === WEBHOOK_PASS;
+}
+
+function verifyBpWebhookAuth(req: {
+  headers: import("express").Request["headers"];
+}): boolean {
+  const secret = process.env.BRANCHLESSPAY_WEBHOOK_SECRET?.trim();
+  if (!secret) {
+    // Dev/sandbox only — production must set BRANCHLESSPAY_WEBHOOK_SECRET.
+    return process.env.NODE_ENV !== "production";
+  }
+
+  const auth = req.headers.authorization;
+  if (typeof auth === "string" && auth.startsWith("Bearer ")) {
+    if (auth.slice(7).trim() === secret) return true;
+  }
+
+  const headerCandidates = [
+    req.headers["x-branchlesspay-secret"],
+    req.headers["x-webhook-secret"],
+    req.headers["x-bp-webhook-secret"],
+  ];
+  for (const h of headerCandidates) {
+    if (typeof h === "string" && h.trim() === secret) return true;
+  }
+
+  return false;
 }
 
 router.post("/webhooks/doordash", async (req, res): Promise<void> => {
@@ -85,6 +115,67 @@ router.post("/webhooks/doordash", async (req, res): Promise<void> => {
   }
 
   res.status(200).json({ ok: true });
+});
+
+/**
+ * BP → Orderly proof-back (pos-native + queued platform anchors).
+ * Spec: BRANCHLESSPAY_WEBHOOK_SECRET; reference_id = Orderly order UUID.
+ */
+async function handleAnchorCallback(
+  req: import("express").Request,
+  res: import("express").Response,
+): Promise<void> {
+  if (!verifyBpWebhookAuth(req)) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const body =
+    req.body && typeof req.body === "object" && !Array.isArray(req.body)
+      ? (req.body as Record<string, unknown>)
+      : {};
+  const parsed = parseAnchorCallbackBody(body);
+  if (!parsed) {
+    res.status(400).json({ error: "missing reference_id" });
+    return;
+  }
+
+  const result = await applyAnchorProof(parsed);
+  if (!result.ok) {
+    // 200 for unknown order — BP retries are noisy; log and ack.
+    if (result.error === "order not found") {
+      req.log.warn(
+        { referenceId: parsed.referenceId },
+        "Anchor callback: order not found",
+      );
+      res.status(200).json({ ok: true, note: "order not found" });
+      return;
+    }
+    res.status(400).json({ error: result.error ?? "apply failed" });
+    return;
+  }
+
+  req.log.info(
+    {
+      orderId: result.orderId,
+      status: parsed.status,
+      txHash: parsed.txHash,
+    },
+    "Anchor proof applied from BP callback",
+  );
+  res.status(200).json({ ok: true, order_id: result.orderId });
+}
+
+router.post("/anchor-callback", async (req, res): Promise<void> => {
+  await handleAnchorCallback(req, res);
+});
+
+router.post("/webhooks/branchlesspay", async (req, res): Promise<void> => {
+  await handleAnchorCallback(req, res);
+});
+
+router.post("/webhooks/anchor-callback", async (req, res): Promise<void> => {
+  await handleAnchorCallback(req, res);
 });
 
 export default router;

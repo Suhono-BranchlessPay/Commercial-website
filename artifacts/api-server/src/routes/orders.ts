@@ -49,6 +49,8 @@ import {
   defaultExplorerUrl,
   enqueueOrderCompletedWebhook,
 } from "../lib/bridgeWebhook";
+import { isPosNativeAnchor } from "../lib/anchorMode";
+import { syncOrderAnchorFromBp } from "../lib/anchorProof";
 
 const router = Router();
 
@@ -441,7 +443,35 @@ router.post("/orders", async (req, res): Promise<void> => {
       }
     }
 
-    if (isBpAnchorConfigured(tenant.slug)) {
+    const posNative = isPosNativeAnchor({
+      slug: tenant.slug,
+      anchorMode: tenant.anchorMode,
+    });
+
+    if (posNative) {
+      // Square↔BP already anchors — do NOT re-anchor. Mark pending until proof-back.
+      try {
+        await db
+          .update(ordersTable)
+          .set({ bpAnchorStatus: "pending" })
+          .where(eq(ordersTable.id, orderId));
+        // Best-effort poll (Square may already have finished anchoring).
+        void syncOrderAnchorFromBp({
+          id: orderId,
+          tenantId: tenant.id,
+          bpAnchorId: null,
+          squarePaymentId: squareResult.squarePaymentId ?? null,
+          chainTxHash: null,
+        }).catch((err) => {
+          req.log.warn({ err, orderId }, "pos-native anchor poll failed");
+        });
+      } catch (err) {
+        req.log.error(
+          { err },
+          "Failed to mark pos-native pending — order still paid",
+        );
+      }
+    } else if (isBpAnchorConfigured(tenant.slug)) {
       try {
         const anchor = await anchorPaidOrder({
           orderId,
@@ -475,6 +505,17 @@ router.post("/orders", async (req, res): Promise<void> => {
             { anchorId: anchor.anchorId, status: anchor.status, chainTxHash },
             "BP post-pay anchor queued",
           );
+          if (!chainTxHash && anchor.anchorId) {
+            void syncOrderAnchorFromBp({
+              id: orderId,
+              tenantId: tenant.id,
+              bpAnchorId: anchor.anchorId,
+              squarePaymentId: squareResult.squarePaymentId ?? null,
+              chainTxHash: null,
+            }).catch((err) => {
+              req.log.warn({ err, orderId }, "platform anchor poll failed");
+            });
+          }
         } else {
           req.log.error(
             { anchor },
