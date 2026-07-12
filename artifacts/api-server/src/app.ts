@@ -12,6 +12,7 @@ import {
   createSpaHtmlHandler,
   getStorefrontDist,
 } from "./middleware/spaHtml";
+import { requireOrderlyDashboardHostPage } from "./lib/dashboardHost";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DASHBOARD_ROOT = path.resolve(__dirname, "../public/dashboard");
@@ -50,7 +51,8 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api/uploads", express.static(UPLOADS_ROOT));
 app.use("/api", tenantMiddleware, router);
 
-// Internal dashboard UI — noindex, auth enforced by /api/dashboard/* APIs.
+// Orderly Foods console — ONLY on orderlyfoods.com (never restaurant domains).
+app.use("/dashboard", requireOrderlyDashboardHostPage);
 app.use("/dashboard", (_req, res, next) => {
   res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
   next();
