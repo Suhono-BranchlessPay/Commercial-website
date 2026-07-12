@@ -163,6 +163,15 @@
         <div id="dayBars" style="padding:12px 0 16px"></div>
       </div>
     </div>
+    <div class="panel">
+      <div class="panel-h"><h2>Customer intelligence</h2><span class="live"><span class="pulse"></span>Insight only</span></div>
+      <div id="segStats" class="empty">Pick a single tenant to load segments.</div>
+      <table>
+        <thead><tr><th>Customer</th><th>Segment</th><th class="num">Orders</th><th class="num">LTV</th><th class="num">AOV</th><th>Favorite</th><th>Last order</th></tr></thead>
+        <tbody id="custRows"></tbody>
+      </table>
+      <p class="empty" style="border-top:1px solid var(--line)">No marketing sends — C5 hold (consent + lawyer).</p>
+    </div>
     <div class="soon">
       <h3>Coming soon (honest — not invented)</h3>
       <ul id="soonList"></ul>
@@ -269,12 +278,19 @@ async function loadAll() {
   flash('');
   try {
     const q = qs();
-    const [summary, items, byTime, anchors] = await Promise.all([
+    const tenant = $('tenant').value;
+    const requests = [
       api('/reports/summary?' + q),
       api('/reports/items?' + q),
       api('/reports/by-time?' + q),
       api('/reports/anchors?' + q),
-    ]);
+    ];
+    if (tenant || (user && user.role === 'manager')) {
+      requests.push(api('/reports/customers?' + q));
+    } else {
+      requests.push(Promise.resolve(null));
+    }
+    const [summary, items, byTime, anchors, customers] = await Promise.all(requests);
 
     const t = summary.totals || {};
     const a = summary.anchors || {};
@@ -313,6 +329,16 @@ async function loadAll() {
 
     const soon = summary.coming_soon || {};
     $('soonList').innerHTML = Object.entries(soon).map(([k,v]) => '<li><b>' + k.replace(/_/g, ' ') + '</b> — ' + v + '</li>').join('');
+
+    if (!customers) {
+      $('segStats').textContent = 'Pick a tenant (Master) to load customer intelligence.';
+      $('custRows').innerHTML = '';
+    } else {
+      const s = customers.segments || {};
+      $('segStats').innerHTML = '<div style="padding:14px 20px;font-size:14px">New <b>' + (s.new||0) + '</b> · Regular <b>' + (s.regular||0) + '</b> · VIP <b>' + (s.vip||0) + '</b> · Churn-risk <b>' + (s.churn_risk||0) + '</b></div>';
+      const rows = customers.customers || [];
+      $('custRows').innerHTML = rows.length ? rows.slice(0, 40).map((c) => '<tr><td>' + (c.name || c.phone) + '</td><td class="mono">' + c.segment + '</td><td class="num">' + c.order_count + '</td><td class="num">' + money(c.ltv_cents) + '</td><td class="num">' + money(c.aov_cents) + '</td><td>' + (c.favorite_item ? c.favorite_item.name : '—') + '</td><td>' + (c.last_order_at ? new Date(c.last_order_at).toLocaleDateString() : '—') + '</td></tr>').join('') : '<tr><td colspan="7" class="empty">No customers yet for this tenant.</td></tr>';
+    }
   } catch (e) {
     flash(e.message || 'Failed to load reports');
   }

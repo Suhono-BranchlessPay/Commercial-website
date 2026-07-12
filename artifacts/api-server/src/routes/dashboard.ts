@@ -22,6 +22,7 @@ import {
   ordersToCsv,
   type ReportRange,
 } from "../lib/dashboardReports";
+import { buildCustomerIntelligence } from "../lib/customerIntelligence";
 
 declare global {
   namespace Express {
@@ -292,6 +293,28 @@ router.get(
     } catch (err) {
       req.log?.error({ err }, "Dashboard CSV export failed");
       res.status(500).json({ error: "Failed to export CSV" });
+    }
+  },
+);
+
+router.get(
+  "/reports/customers",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const tenantId = scopedTenant(req, res);
+      if (tenantId === undefined) return;
+      if (!tenantId) {
+        res.status(400).json({
+          error: "tenant_id required for customer intelligence (pick a tenant)",
+        });
+        return;
+      }
+      const data = await buildCustomerIntelligence({ tenantId });
+      res.json(data);
+    } catch (err) {
+      req.log?.error({ err }, "Dashboard customer intel failed");
+      res.status(500).json({ error: "Failed to build customer intelligence" });
     }
   },
 );

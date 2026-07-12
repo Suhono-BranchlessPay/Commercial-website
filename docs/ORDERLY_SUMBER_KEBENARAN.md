@@ -54,12 +54,15 @@ Satu codebase, banyak restoran. Tambah restoran = tambah config, **BUKAN** tulis
 
 ### P-ENGINE — Backend / Dashboard / Report / AI infra (aktif saat Kirin/Linton hold)
 
-Branch: `feature/engine-phase-c1-menu-from-photo`. Specs: `docs/Spec_OrderlyFoods_API_Bridge.md`, `docs/Spec_OrderlyFoods_MenuFromPhoto.md`.
+Branch: engine complete through C4 scaffold on `main` after merge. Specs: `docs/Spec_OrderlyFoods_API_Bridge.md`, `docs/Spec_OrderlyFoods_MenuFromPhoto.md`, `docs/C7_Meta_API_Registration_Checklist.md`.
 
-1. **A** money cents + customers/consent + API Bridge — done (merged PR #1)  
-2. **B** dashboard + report v1 (data Samurai nyata saja — no fake metrics) — done (merged PR #2 via #1)  
-3. **C1** Menu-from-photo (prioritas AI) — in progress → C2 review → C3 intel → C4 upsell  
-4. C5 marketing **TAHAN** (consent + lawyer); C6 SEO; C7 ajukan Meta API  
+1. **A** money cents + customers/consent + API Bridge — ✅ merged  
+2. **B** dashboard + report v1 — ✅ merged  
+3. **C1** Menu-from-photo — ✅ merged  
+4. **C2** Review reply drafts (human gate; OAuth send later) · **C3** Customer intelligence · **C4** Upsell co-occurrence — ✅ (PR completion)  
+5. **C6** Schema.org Restaurant (+ opening hours) — ✅  
+6. **C7** Meta API — checklist (`docs/C7_Meta_API_Registration_Checklist.md`) — ops registration pending  
+7. **C5** Marketing — **TAHAN** (consent + lawyer)  
 
 Kirin & Linton: **HOLD** (Health Dept) — bukan blocker teknis.
 

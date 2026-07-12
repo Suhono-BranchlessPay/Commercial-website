@@ -27,6 +27,12 @@ export type TenantSeo = {
   };
   lat: number;
   lng: number;
+  /** Schema.org OpeningHoursSpecification rows when hours are known. */
+  openingHours: Array<{
+    dayOfWeek: string;
+    opens: string;
+    closes: string;
+  }>;
 };
 
 function themeStr(
@@ -64,6 +70,50 @@ function absoluteUrl(domain: string, pathOrUrl: string): string {
   if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
   const path = pathOrUrl.startsWith("/") ? pathOrUrl : `/${pathOrUrl}`;
   return `https://${domain}${path}`;
+}
+
+const DAY_MAP: Record<string, string> = {
+  mon: "Monday",
+  monday: "Monday",
+  tue: "Tuesday",
+  tues: "Tuesday",
+  tuesday: "Tuesday",
+  wed: "Wednesday",
+  wednesday: "Wednesday",
+  thu: "Thursday",
+  thur: "Thursday",
+  thursday: "Thursday",
+  fri: "Friday",
+  friday: "Friday",
+  sat: "Saturday",
+  saturday: "Saturday",
+  sun: "Sunday",
+  sunday: "Sunday",
+};
+
+function parseOpeningHours(
+  hours: Record<string, unknown> | null | undefined,
+): TenantSeo["openingHours"] {
+  if (!hours || typeof hours !== "object") return [];
+  const out: TenantSeo["openingHours"] = [];
+  for (const [key, val] of Object.entries(hours)) {
+    const day = DAY_MAP[key.toLowerCase()];
+    if (!day) continue;
+    if (typeof val === "string") {
+      const m = val.match(
+        /(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/,
+      );
+      if (m) out.push({ dayOfWeek: day, opens: m[1], closes: m[2] });
+      continue;
+    }
+    if (val && typeof val === "object" && !Array.isArray(val)) {
+      const o = val as Record<string, unknown>;
+      const opens = typeof o.open === "string" ? o.open : typeof o.opens === "string" ? o.opens : null;
+      const closes = typeof o.close === "string" ? o.close : typeof o.closes === "string" ? o.closes : null;
+      if (opens && closes) out.push({ dayOfWeek: day, opens, closes });
+    }
+  }
+  return out;
 }
 
 /** Build public SEO/identity payload from tenant row + theme JSON (Theme Pack). */
@@ -181,6 +231,7 @@ export function buildTenantSeo(tenant: TenantContext): TenantSeo {
     },
     lat: tenant.lat,
     lng: tenant.lng,
+    openingHours: parseOpeningHours(tenant.hours),
   };
 }
 
@@ -222,6 +273,22 @@ export function renderTenantHeadHtml(seo: TenantSeo): string {
     ? `,\n      "telephone": "${escapeJson(seo.phone)}"`
     : "";
   const cuisine = seo.cuisine.map((c) => `"${escapeJson(c)}"`).join(", ");
+  const opening =
+    seo.openingHours.length > 0
+      ? `,
+      "openingHoursSpecification": [
+${seo.openingHours
+  .map(
+    (h) => `        {
+          "@type": "OpeningHoursSpecification",
+          "dayOfWeek": "https://schema.org/${h.dayOfWeek}",
+          "opens": "${escapeJson(h.opens)}",
+          "closes": "${escapeJson(h.closes)}"
+        }`,
+  )
+  .join(",\n")}
+      ]`
+      : "";
 
   return `    <title>${escapeHtml(seo.title)}</title>
     <meta name="description" content="${escapeHtml(seo.description)}" />
@@ -269,7 +336,7 @@ export function renderTenantHeadHtml(seo: TenantSeo): string {
         "@type": "GeoCoordinates",
         "latitude": ${Number.isFinite(seo.lat) ? seo.lat : 0},
         "longitude": ${Number.isFinite(seo.lng) ? seo.lng : 0}
-      }${rating},
+      }${rating}${opening},
       "hasMenu": "${escapeJson(seo.canonical)}menu",
       "potentialAction": {
         "@type": "OrderAction",
