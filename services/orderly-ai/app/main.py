@@ -12,6 +12,12 @@ from .config import settings
 from .schemas import ExtractResponse, MenuDraft, MenuDraftItem
 from .store import create_draft, get_draft, list_drafts, update_draft
 from .vision import extract_menu_from_image
+from .reviews import (
+    approve_review_draft,
+    create_review_draft,
+    get_review_draft,
+    list_review_drafts,
+)
 
 app = FastAPI(
     title="Orderly AI",
@@ -203,4 +209,77 @@ async def menu_draft_approve(
         "publish_to_square": body.publish_to_square,
         "bridge": result,
         "message": "Imported via Orderly Bridge after human approval.",
+    }
+
+
+class ReviewInBody(BaseModel):
+    tenant_id: str
+    platform: str = "google"
+    rating: int = Field(ge=1, le=5)
+    review_text: str = Field(min_length=1)
+    reviewer_name: str | None = None
+
+
+@app.post("/v1/reviews/draft")
+async def reviews_draft(
+    body: ReviewInBody,
+    x_orderly_review_token: str | None = Header(default=None),
+) -> dict:
+    """C2 — create reply draft. Negatives alert owner; never auto-send."""
+    _check_review_token(x_orderly_review_token)
+    draft = create_review_draft(
+        tenant_id=body.tenant_id.strip(),
+        platform=body.platform.strip().lower() or "google",
+        rating=body.rating,
+        review_text=body.review_text,
+        reviewer_name=body.reviewer_name,
+    )
+    return {"draft": draft, "warning": "Human approve required before any send."}
+
+
+@app.get("/v1/reviews/drafts")
+async def reviews_list(
+    tenant_id: str | None = None,
+    x_orderly_review_token: str | None = Header(default=None),
+) -> dict:
+    _check_review_token(x_orderly_review_token)
+    return {"drafts": list_review_drafts(tenant_id)}
+
+
+@app.get("/v1/reviews/drafts/{draft_id}")
+async def reviews_get(
+    draft_id: str,
+    x_orderly_review_token: str | None = Header(default=None),
+) -> dict:
+    _check_review_token(x_orderly_review_token)
+    draft = get_review_draft(draft_id)
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    return draft
+
+
+class ReviewApproveBody(BaseModel):
+    approved_by: str = Field(min_length=1)
+    draft_reply: str | None = None
+
+
+@app.post("/v1/reviews/drafts/{draft_id}/approve")
+async def reviews_approve(
+    draft_id: str,
+    body: ReviewApproveBody,
+    x_orderly_review_token: str | None = Header(default=None),
+) -> dict:
+    _check_review_token(x_orderly_review_token)
+    try:
+        draft = approve_review_draft(
+            draft_id,
+            approved_by=body.approved_by,
+            edited_reply=body.draft_reply,
+        )
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail="Draft not found") from err
+    return {
+        "status": draft["status"],
+        "draft": draft,
+        "message": "Approved for send. Outbound Google/Facebook OAuth adapters not wired yet.",
     }
