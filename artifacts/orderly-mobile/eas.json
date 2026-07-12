@@ -1,0 +1,44 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleDebug"
+      },
+      "env": {
+        "EXPO_PUBLIC_TENANT_SLUG": "samurai-martinsville",
+        "EXPO_PUBLIC_PAYMENT_PROVIDER": "square",
+        "EXPO_PUBLIC_SQUARE_TEST_NONCE": "1"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_TENANT_SLUG": "samurai-martinsville",
+        "EXPO_PUBLIC_PAYMENT_PROVIDER": "square",
+        "EXPO_PUBLIC_SQUARE_TEST_NONCE": "1"
+      }
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_TENANT_SLUG": "samurai-martinsville",
+        "EXPO_PUBLIC_PAYMENT_PROVIDER": "square"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

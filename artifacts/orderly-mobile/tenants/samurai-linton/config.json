@@ -1,0 +1,40 @@
+{
+  "appId": "samurai-linton",
+  "tenantId": "samurai-linton",
+  "slug": "samurai-linton",
+  "appName": "Samurai Linton",
+  "shortName": "Samurai Linton",
+  "locationLabel": "Linton, IN",
+  "bundleId": "com.orderly.samurai.linton",
+  "androidPackage": "com.orderly.samurai.linton",
+  "apiBaseUrl": "",
+  "domain": "",
+  "orderTypes": ["pickup"],
+  "comingSoon": true,
+  "layoutVariant": "hero-fullimage",
+  "theme": {
+    "primary": "#E11D2E",
+    "accent": "#D4A017",
+    "background": "#0F0F0F",
+    "surface": "#1A1A1A",
+    "text": "#FFFFFF",
+    "muted": "#A3A3A3",
+    "fontHeading": "PlayfairDisplay",
+    "fontBody": "DMSans"
+  },
+  "restaurant": {
+    "address": "TBD",
+    "city": "Linton",
+    "state": "IN",
+    "postcode": "",
+    "phone": "",
+    "tagline": "Coming soon — Samurai Hibachi & Sushi in Linton, IN."
+  },
+  "hours": [],
+  "assets": {
+    "logo": "./assets/brand/logo.png",
+    "icon": "./assets/brand/icon.png",
+    "splash": "./assets/brand/splash.png"
+  },
+  "menuImageMap": {}
+}

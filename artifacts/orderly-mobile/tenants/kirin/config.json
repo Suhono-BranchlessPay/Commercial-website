@@ -1,0 +1,40 @@
+{
+  "appId": "kirin",
+  "tenantId": "kirin",
+  "slug": "kirin",
+  "appName": "Kirin Hibachi Express",
+  "shortName": "Kirin",
+  "locationLabel": "Henderson, KY",
+  "bundleId": "com.orderly.kirin",
+  "androidPackage": "com.orderly.kirin",
+  "apiBaseUrl": "https://kirinhibachiexpress.com",
+  "domain": "kirinhibachiexpress.com",
+  "orderTypes": ["pickup"],
+  "comingSoon": false,
+  "layoutVariant": "hero-split",
+  "theme": {
+    "primary": "#8B2318",
+    "accent": "#C8A24B",
+    "background": "#F5EEE0",
+    "surface": "#EBE0CC",
+    "text": "#1A1512",
+    "muted": "#6B5D4F",
+    "fontHeading": "Oswald",
+    "fontBody": "LibreFranklin"
+  },
+  "restaurant": {
+    "address": "2278 S Green St",
+    "city": "Henderson",
+    "state": "KY",
+    "postcode": "42420",
+    "phone": "+12708233405",
+    "tagline": "Hibachi, made fresh & fast."
+  },
+  "hours": [],
+  "assets": {
+    "logo": "./assets/brand/logo.png",
+    "icon": "./assets/brand/icon.png",
+    "splash": "./assets/brand/splash.png"
+  },
+  "menuImageMap": {}
+}
