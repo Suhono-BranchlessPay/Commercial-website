@@ -20,6 +20,10 @@ export interface UpsertCustomerInput {
   phone: string;
   email?: string | null;
   address?: StructuredAddress | null;
+  /** Optional marketing consent captured at checkout (default false). */
+  marketingConsentEmail?: boolean;
+  marketingConsentSms?: boolean;
+  consentSource?: string | null;
 }
 
 export interface UpsertCustomerResult {
@@ -51,6 +55,10 @@ export async function upsertCustomerAndAddress(
     .limit(1);
 
   let customerId: string;
+  const now = new Date();
+  const wantsEmailConsent = Boolean(input.marketingConsentEmail);
+  const wantsSmsConsent = Boolean(input.marketingConsentSms);
+  const consentTouched = wantsEmailConsent || wantsSmsConsent;
 
   if (existing[0]) {
     customerId = existing[0].id;
@@ -60,6 +68,16 @@ export async function upsertCustomerAndAddress(
         firstName: input.firstName.trim(),
         lastName: input.lastName?.trim() || null,
         email: email ?? existing[0].email,
+        ...(consentTouched
+          ? {
+              marketingConsentEmail:
+                wantsEmailConsent || existing[0].marketingConsentEmail,
+              marketingConsentSms:
+                wantsSmsConsent || existing[0].marketingConsentSms,
+              consentTimestamp: now,
+              consentSource: input.consentSource ?? "checkout",
+            }
+          : {}),
       })
       .where(eq(customersTable.id, customerId));
   } else {
@@ -71,6 +89,12 @@ export async function upsertCustomerAndAddress(
       lastName: input.lastName?.trim() || null,
       phone: phoneE164,
       email,
+      orderCount: 0,
+      totalSpentCents: 0,
+      marketingConsentEmail: wantsEmailConsent,
+      marketingConsentSms: wantsSmsConsent,
+      consentTimestamp: consentTouched ? now : null,
+      consentSource: consentTouched ? (input.consentSource ?? "checkout") : null,
     });
   }
 
@@ -147,4 +171,44 @@ export async function upsertCustomerAndAddress(
     email,
     formattedAddress,
   };
+}
+
+/** After a paid order is persisted — update CRM aggregates (tenant-scoped). */
+export async function recordCustomerPaidOrder(input: {
+  tenantId: string;
+  customerId: string;
+  totalCents: number;
+  orderedAt?: Date;
+}): Promise<void> {
+  const orderedAt = input.orderedAt ?? new Date();
+  const spent = Math.max(0, Math.round(input.totalCents));
+
+  const rows = await db
+    .select()
+    .from(customersTable)
+    .where(
+      and(
+        eq(customersTable.id, input.customerId),
+        eq(customersTable.tenantId, input.tenantId),
+      ),
+    )
+    .limit(1);
+
+  const customer = rows[0];
+  if (!customer) return;
+
+  await db
+    .update(customersTable)
+    .set({
+      orderCount: customer.orderCount + 1,
+      totalSpentCents: customer.totalSpentCents + spent,
+      lastOrderAt: orderedAt,
+      firstOrderAt: customer.firstOrderAt ?? orderedAt,
+    })
+    .where(
+      and(
+        eq(customersTable.id, input.customerId),
+        eq(customersTable.tenantId, input.tenantId),
+      ),
+    );
 }

@@ -1,6 +1,6 @@
 # ORDERLY — SUMBER KEBENARAN (Status, Prioritas, Aturan Arsitektur)
 
-**Versi:** 11 Juli 2026  
+**Versi:** 12 Juli 2026  
 **Untuk:** Verry + agent automation  
 **Sifat:** Dokumen ini **MENGGANTIKAN** instruksi-instruksi lama. Kalau ada konflik, dokumen ini menang.  
 **Lokasi:** `docs/` di repo `orderly-platform`
@@ -43,25 +43,29 @@ Satu codebase, banyak restoran. Tambah restoran = tambah config, **BUKAN** tulis
 | Anchor BP — mode platform | `ORDERLY_BP_API_KEY` (satu key + `tenant_id`); sudah dites, bukti on-chain |
 | Audit aliran uang | Semua charge lewat Square; ongkir DoorDash ditagih terpisah (titik yang menunggu Stripe) |
 | Delivery OFF | `order_types=["pickup"]` semua tenant; kode DoorDash TIDAK dihapus (push `1d82e52`) |
-| Mobile app Android (build) | `com.orderly.samurai.martinsville` build sukses (**belum** diuji transaksi — lihat §3) |
+| Mobile app Android (build) | `com.orderly.samurai.martinsville` build sukses |
+| **P1 Mobile transaction evidence** | **SELESAI 12 Jul 2026:** Stage 1 sandbox + Stage 2 live card → Square Order Hub → kitchen → on-chain (`0x356a195e…`, Monad testnet status 1) |
 
 ---
 
 ## 3. PRIORITAS AKTIF (kerjakan ini)
 
-### P1 — Mobile App: buktikan alur transaksi (PALING MENDESAK)
+### P1 — Mobile App transaction evidence — ✅ SELESAI (pindah ke §2)
 
-Build sudah sukses, tapi belum diuji transaksi nyata. Yang harus dibuktikan (**dengan BUKTI**, bukan laporan):
+### P-ENGINE — Backend / Dashboard / Report / AI infra (aktif saat Kirin/Linton hold)
 
-- Kirim APK ke Malik untuk diuji di HP fisik.
-- Alur: menu → cart → checkout PICKUP → bayar CARD → order masuk Square (Source `"Orderly Order Hub"`, type `"Pickup"`) → auto-fire kitchen → anchor BP.
-- Identitas Samurai benar (logo/warna/nama), delivery **TIDAK** muncul.
-- Tidak ada secret/kredensial di dalam app (app bisa di-decompile).
-- Bukti: screenshot order di Square + response anchor (`chain_tx_hash`).
+Branch: `feature/engine-phase-a-backend`. Spec bridge: `docs/Spec_OrderlyFoods_API_Bridge.md`.
 
-### P2 — Kirin & Samurai Linton: menunggu data (blocker dari Malik)
+1. **A1** money components (integer cents) + **A2** customers + consent + **A3** API Bridge  
+2. **B** dashboard + report v1 (data Samurai nyata saja — no fake metrics)  
+3. **C1** Menu-from-photo (prioritas AI) → C2 review → C3 intel → C4 upsell  
+4. C5 marketing **TAHAN** (consent + lawyer); C6 SEO; C7 ajukan Meta API  
 
-Sistem sudah siap; yang kurang data & kredensial:
+Kirin & Linton: **HOLD** (Health Dept) — bukan blocker teknis.
+
+### P2 — Kirin & Samurai Linton: menunggu data / izin klien (HOLD)
+
+Sistem sudah siap; yang kurang data & kredensial + izin Health Department:
 
 - **Kirin:** menu (via Square Kirin), foto, kredensial Square Kirin, jam buka.
 - **Linton:** kredensial Square Linton, foto, alamat/jam/telepon, nama pas.
