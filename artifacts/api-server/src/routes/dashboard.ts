@@ -23,6 +23,7 @@ import {
   type ReportRange,
 } from "../lib/dashboardReports";
 import { buildCustomerIntelligence } from "../lib/customerIntelligence";
+import { requireOrderlyDashboardHost } from "../lib/dashboardHost";
 
 declare global {
   namespace Express {
@@ -33,6 +34,9 @@ declare global {
 }
 
 const router = Router();
+
+/** Never expose console APIs on restaurant client domains. */
+router.use(requireOrderlyDashboardHost);
 
 const VALID_RANGES = new Set<ReportRange>(["today", "7d", "28d", "30d"]);
 
