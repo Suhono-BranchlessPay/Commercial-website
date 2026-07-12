@@ -3,6 +3,7 @@ import {
   text,
   real,
   boolean,
+  integer,
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
@@ -18,6 +19,15 @@ export const customersTable = pgTable(
     lastName: text("last_name"),
     phone: text("phone").notNull(),
     email: text("email"),
+    firstOrderAt: timestamp("first_order_at"),
+    lastOrderAt: timestamp("last_order_at"),
+    orderCount: integer("order_count").notNull().default(0),
+    totalSpentCents: integer("total_spent_cents").notNull().default(0),
+    /** Consent fields required before any marketing send (TCPA / CAN-SPAM). */
+    marketingConsentEmail: boolean("marketing_consent_email").notNull().default(false),
+    marketingConsentSms: boolean("marketing_consent_sms").notNull().default(false),
+    consentTimestamp: timestamp("consent_timestamp"),
+    consentSource: text("consent_source"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [

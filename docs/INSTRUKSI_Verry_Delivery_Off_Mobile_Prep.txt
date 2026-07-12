@@ -1,0 +1,120 @@
+INSTRUKSI UNTUK VERRY — AUDIT ARSITEKTUR, NONAKTIFKAN DELIVERY SEMENTARA, & SIAPKAN MOBILE APP
+================================================================================================
+
+*** SUPERSEDED ***
+Dokumen ini DIGANTIKAN oleh docs/ORDERLY_SUMBER_KEBENARAN.md (11 Juli 2026).
+Kalau ada konflik, SUMBER KEBENARAN menang. Simpan file ini hanya sebagai arsip.
+*** SUPERSEDED ***
+
+STATUS (Juli 2026):
+- Bagian 1 (audit aliran uang) & Bagian 2 (delivery-off) = [SELESAI — 1d82e52]
+  Delivery dimatikan via theme.order_types = ["pickup"]; kode DoorDash tetap ada.
+- Bagian 3 (mobile app) = AKTIF — lanjut di docs/INSTRUKSI_Verry_Mobile_App_OpsiB.txt
+- JANGAN kerjakan ulang Bagian 1–2. Aturan pickup-only sampai Stripe live TETAP berlaku.
+
+KONTEKS & KEPUTUSAN MALIK:
+- Stripe Connect (Express) BELUM siap — masih menunggu: (a) entitas legal Orderly selesai
+  (Stripe Atlas, est. 2-3 minggu lagi), (b) CPA & pengacara fintech. Pembayaran live via
+  Stripe BELUM boleh aktif.
+- Kondisi sekarang: transaksi (termasuk DELIVERY) pembayarannya diproses lewat POS SQUARE,
+  bukan Stripe. Ini berisiko untuk delivery karena aliran ongkir DoorDash belum bersih
+  (belum ada Stripe untuk memisahkan dana dengan benar).
+- KEPUTUSAN: NONAKTIFKAN opsi DELIVERY dulu di semua tenant. Sementara CUKUP PICKUP saja
+  (order pickup langsung oleh customer). Delivery diaktifkan kembali SETELAH Stripe live.
+- Sambil menunggu 2-3 minggu, siapkan MOBILE APP.
+
+================================================================================================
+BAGIAN 1 — AUDIT ARSITEKTUR PEMBAYARAN (cek dulu, laporkan)  [SELESAI — 1d82e52]
+================================================================================================
+Tolong CEK & LAPORKAN kondisi arsitektur saat ini (dengan bukti, bukan asumsi):
+
+1. ALIRAN PEMBAYARAN SEKARANG:
+   - Konfirmasi: apakah SEMUA transaksi (pickup & delivery) pembayarannya lewat Square?
+   - Untuk delivery: bagaimana ongkir DoorDash ($ yang dibayar customer) mengalir sekarang?
+     Ke mana uang ongkir itu? Bagaimana DoorDash dibayar? (ini yang perlu diperjelas)
+   - Apakah ada transaksi yang menyentuh Stripe sama sekali? (seharusnya belum)
+
+2. PER-TENANT:
+   - Bagaimana kredensial Square tiap tenant dipisah? (Samurai vs Kirin)
+   - Apakah anchor BP jalan per tenant? (Samurai via Square = pos-native, sudah terbukti jalan)
+
+3. LAPORKAN temuan + diagram singkat alur uang saat ini, supaya kita tahu titik yang perlu
+   diubah saat Stripe masuk nanti.
+
+================================================================================================
+BAGIAN 2 — NONAKTIFKAN DELIVERY (semua tenant, sementara)  [SELESAI — 1d82e52]
+================================================================================================
+1. NONAKTIFKAN opsi DELIVERY di storefront semua tenant. CUKUP tampilkan PICKUP.
+   - Config per tenant: order_types = ["pickup"] (hapus "delivery" sementara).
+   - Buat ini CONFIG (bukan hapus kode) — supaya mudah diaktifkan kembali nanti tinggal
+     tambah "delivery" saat Stripe siap. JANGAN hapus kode DoorDash, cukup matikan opsinya.
+
+2. PASTIKAN alur pickup BERSIH & jalan sempurna di semua tenant:
+   - Customer pilih pickup -> bayar CARD (Square Web Payments, kartu sungguhan) ->
+     order dibuat -> Square (Orderly Order Hub, type "Pickup") -> auto-fire kitchen -> anchor BP.
+   - Urutan WAJIB: bayar sukses DULU, baru order dibuat.
+   - Tidak ada jejak "delivery" yang tersisa di UI (tombol Order Delivery, form alamat delivery,
+     quote ongkir) selama delivery nonaktif.
+
+3. UI harus rapi: jangan ada tombol/section delivery yang "menggantung" atau error.
+   Hero/CTA cukup "Order Pickup" + "View Menu".
+
+4. Samurai: anchor via Square (pos-native) TETAP jalan — jangan terganggu.
+
+================================================================================================
+BAGIAN 3 — SIAPKAN MOBILE APP (sambil menunggu Stripe, 2-3 minggu)  [AKTIF]
+================================================================================================
+Manfaatkan waktu tunggu untuk menyiapkan mobile app. Prinsip WAJIB: mobile app harus mengikuti
+arsitektur MULTI-TENANT yang sama (satu app, banyak tenant / atau per-tenant dari config),
+BUKAN app baru per restoran yang di-hardcode.
+
+Keputusan model: Opsi B (final) — lihat docs/INSTRUKSI_Verry_Mobile_App_OpsiB.txt.
+
+Yang perlu diklarifikasi & direncanakan (diskusikan dgn Malik):
+1. MODEL APP:
+   - Opsi A: SATU app multi-tenant (customer pilih/deteksi restoran) — mirih platform.
+   - Opsi B: App per-restoran yang di-generate dari config (tiap restoran punya app sendiri
+     di store, tapi dari SATU codebase + config tenant) — mirip "white-label app" Owner.com.
+   Owner.com/DoorDash pola: umumnya per-restoran branded app dari satu platform. Malik perlu
+   putuskan A atau B. (Rekomendasi: samakan dengan strategi web — config-driven, satu codebase.)
+   → DIPUTUSKAN: Opsi B (lihat docs/INSTRUKSI_Verry_Mobile_App_OpsiB.txt).
+
+2. FUNGSI MVP MOBILE (samakan dengan web, PICKUP dulu):
+   - Lihat menu (dari Square catalog tenant), tambah ke cart, checkout PICKUP, bayar CARD.
+   - Order status / konfirmasi. Login/identifikasi customer sederhana.
+   - Delivery DITUNDA (sama seperti web) sampai Stripe siap.
+   - Anchor BP mengikuti mode tenant (pos-native/platform) — sama seperti web.
+
+3. ARSITEKTUR:
+   - Pakai BACKEND yang SAMA dengan web (endpoint yang sama), jangan bikin backend terpisah.
+   - Kredensial di backend/secrets, TIDAK di app (app tidak boleh pegang API key POS/Stripe/BP).
+   - Config-driven: identitas tenant (logo, warna, menu) dari config, seperti web.
+   - Teknologi: sarankan (mis. React Native/Expo) yang bisa berbagi logika dengan web bila memungkinkan.
+
+4. JANGAN sambungkan pembayaran Stripe di app dulu — Stripe belum live. Pickup + Square dulu
+   (atau siapkan kerangka pembayaran yang mudah diganti ke Stripe nanti).
+
+================================================================================================
+URUTAN & PRIORITAS
+================================================================================================
+1. Audit arsitektur pembayaran (Bagian 1) — [SELESAI — 1d82e52]
+2. Nonaktifkan delivery, pastikan pickup bersih (Bagian 2) — [SELESAI — 1d82e52]
+3. Rencanakan + mulai mobile app MVP pickup (Bagian 3) — AKTIF (kerja sekarang)
+4. (Setelah Stripe live, ~2-3 minggu): aktifkan delivery + integrasi Stripe Connect
+   (kerangka sudah disiapkan sebelumnya).
+
+================================================================================================
+VERIFIKASI (Definition of Done untuk fase ini)
+================================================================================================
+[x] Laporan audit alur pembayaran saat ini + diagram uang (termasuk: ke mana ongkir DoorDash). [SELESAI — 1d82e52]
+[x] Delivery NONAKTIF di semua tenant (config order_types=["pickup"]); kode DoorDash tidak dihapus. [SELESAI — 1d82e52]
+[x] Pickup jalan sempurna: bayar CARD -> order -> Square (Pickup, Orderly Order Hub) -> kitchen -> anchor. [SELESAI — 1d82e52]
+[x] UI bersih tanpa jejak delivery yang menggantung. [SELESAI — 1d82e52]
+[x] Samurai anchor (pos-native) tetap jalan. [SELESAI — 1d82e52]
+[ ] Rencana mobile app: model (A/B) diputuskan, MVP pickup dirancang, pakai backend & config yang sama.
+[ ] Tidak ada kredensial di app/frontend.
+
+CATATAN: Stripe Connect & delivery diaktifkan HANYA setelah entitas legal Orderly + CPA/pengacara
+selesai (est. 2-3 minggu). Sampai itu: pickup-only, pembayaran via Square, anchor mengikuti mode tenant.
+Beri tahu Malik daftar keputusan yang butuh dia putuskan (mis. model mobile app A/B).
+Terima kasih.

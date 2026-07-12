@@ -1,0 +1,132 @@
+INSTRUKSI LENGKAP — MOBILE APP ORDERLY (Opsi B: White-Label Branded per Restoran)
+==================================================================================
+
+*** SUPERSEDED ***
+Dokumen ini DIGANTIKAN oleh docs/ORDERLY_SUMBER_KEBENARAN.md (11 Juli 2026).
+Prioritas aktif mobile = §3 P1 di SUMBER KEBENARAN. Kalau ada konflik, SUMBER KEBENARAN menang.
+*** SUPERSEDED ***
+
+KEPUTUSAN MALIK (final): Model B — app branded per restoran, dari SATU codebase + config tenant.
+Tiap restoran punya app sendiri di App Store / Play Store (nama & logo restoran sendiri),
+tapi mesinnya SATU. Ini persis model Owner.com (sudah divalidasi — lihat "Temuan Owner" di bawah).
+
+TUJUAN FASE INI: bangun ARSITEKTUR mobile yang benar + luncurkan SATU app pilot. BUKAN submit
+semua restoran sekaligus. Manfaatkan waktu tunggu Stripe (est. 2-3 minggu).
+
+==================================================================================
+TEMUAN OWNER.COM (cetak biru yang sudah divalidasi — untuk acuan)
+==================================================================================
+Dari riset Play Store Owner.com:
+- Owner publish PULUHAN app restoran (Crust and Roll, Talkin Tacos, El Guero Canelo, dll.),
+  tiap satu app BRANDED sendiri (nama & logo restoran), semua di bawah akun Owner.
+- Owner memakai BEBERAPA nama akun developer ("Owner.com", "Owner.com Restaurant apps",
+  "Owner.com for Restaurants") — kemungkinan strategi menghindari flag Apple Guideline 4.3
+  (template spam) saat jumlah app banyak.
+- Owner punya DUA jenis app: (1) app KONSUMEN branded per resto (untuk order), (2) app OPERATOR
+  ("Owner - Run your restaurant") untuk pemilik kelola pesanan. FASE INI fokus (1) saja.
+- App konsumen di-publish di bawah akun OWNER, bukan akun tiap restoran.
+=> Orderly ikuti: app branded per resto, di bawah akun developer ORDERLY.
+
+==================================================================================
+BAGIAN 1 — ARSITEKTUR (bangun BENAR sejak awal)
+==================================================================================
+1. SATU CODEBASE, CONFIG-DRIVEN (selaras web multi-tenant):
+   - Satu project mobile. Identitas tiap restoran (nama, logo, warna, menu, alamat, order_types)
+     dari CONFIG tenant — BUKAN hardcode, BUKAN project per restoran.
+   - Tiap "app restoran" = build variant dari codebase yang sama dengan config tenant berbeda
+     (mis. build-time config: TENANT_SLUG=kirin -> app Kirin; TENANT_SLUG=samurai -> app Samurai).
+   - Menambah restoran = tambah config + build variant, TANPA menulis/menyalin kode.
+
+2. BACKEND SAMA DENGAN WEB:
+   - Pakai endpoint yang SAMA (/api/...) — JANGAN bikin backend baru.
+   - Mobile app hanya konsumen API; sumber kebenaran (menu, order, anchor) di backend yang sama.
+   - Deteksi/muat tenant lewat parameter tenant (mis. header/slug), konsisten dgn web.
+
+3. KEAMANAN (WAJIB):
+   - App TIDAK PERNAH pegang kredensial Square/Stripe/BP/DoorDash. Semua di backend/secrets.
+   - Pembayaran kartu lewat SDK yang aman (token, bukan raw card ke server kita).
+   - Tidak ada secret di bundle app (app bisa di-decompile — jangan taruh apa pun rahasia).
+
+4. TEKNOLOGI (rekomendasi):
+   - React Native / Expo — satu codebase iOS + Android, bisa berbagi types & API client dengan web.
+   - Manfaatkan logika yang sudah ada di web (storefrontConfig, tenant, order flow) bila memungkinkan.
+
+==================================================================================
+BAGIAN 2 — FUNGSI MVP (PICKUP dulu, samakan dengan web)
+==================================================================================
+MVP mobile = paritas dengan web versi pickup-only:
+- Lihat menu (dari Square catalog tenant) + foto.
+- Tambah ke cart, atur item, catatan khusus (mis. "No Spicy").
+- Checkout PICKUP (delivery DITUNDA, sama seperti web — order_types=["pickup"]).
+- Bayar KARTU (Square Web Payments / SDK mobile Square) — kartu sungguhan, bukan EXTERNAL.
+- Urutan WAJIB: bayar sukses -> order dibuat -> Square (Orderly Order Hub, type "Pickup")
+  -> auto-fire kitchen -> anchor BP sesuai anchor_mode tenant (Samurai pos-native, Kirin platform).
+- Konfirmasi & status order. Identifikasi customer sederhana (mis. nomor HP / device),
+  konsisten dengan web.
+- Reorder (opsional, tapi Owner menonjolkannya — "Fast re-ordering") — boleh fase berikutnya.
+- Rewards/points — TUNDA (fase berikutnya, saat loyalty dibangun).
+
+JANGAN sambungkan Stripe di app (Stripe belum live). Siapkan lapisan pembayaran yang MUDAH
+diganti ke Stripe nanti (abstraksi), tapi sekarang pakai Square + pickup.
+
+==================================================================================
+BAGIAN 3 — AKUN STORE & STRATEGI PELUNCURAN (anti-4.3)
+==================================================================================
+1. AKUN DEVELOPER:
+   - Publish semua app di bawah akun developer ORDERLY (bukan akun tiap restoran) — seperti Owner.
+   - Apple Developer ($99/th) + Google Play ($25 sekali) atas nama Orderly.
+   - CATATAN SKALA: Owner memakai BEBERAPA nama akun untuk hindari flag Apple 4.3 saat app banyak.
+     Untuk sekarang 1 akun cukup. Rencanakan kemungkinan sebar ke beberapa akun saat skala besar.
+
+2. STRATEGI ANTI-APPLE 4.3 (template spam) — penting karena Orderly publisher BARU:
+   - Tiap app harus cukup BERBEDA: nama, logo, warna, konten menu, foto restoran nyata.
+   - Isi metadata store lengkap & unik per app (deskripsi, screenshot dari app restoran itu).
+   - Hindari kesan "template kosong yang di-clone". App harus terasa milik restoran itu.
+   - Siapkan jawaban untuk App Review kalau ditanya (jelaskan: platform white-label untuk
+     restoran independen, seperti Owner.com/ChowNow — kategori yang Apple sudah kenal).
+
+3. PELUNCURAN BERTAHAP (WAJIB — jangan submit semua sekaligus):
+   - FASE 1 (sekarang): bangun arsitektur + submit SATU app PILOT.
+     Pilih restoran SENDIRI (Samurai ATAU Kirin) — risiko rendah, kontrol penuh.
+     Tujuan: temukan semua kendala review (Apple 4.3, dll.) di SATU app, bukan tujuh.
+   - FASE 2 (setelah pilot LOLOS + Stripe live): generate & submit restoran lain satu per satu,
+     dengan pola yang sudah terbukti.
+   - Alasan: Orderly publisher baru (belum punya track record seperti Owner) — buktikan model
+     diterima store di 1 app dulu sebelum bertaruh banyak.
+
+4. GOOGLE vs APPLE:
+   - Google Play lebih longgar (Owner's Crust&Roll ada di Google). Apple lebih ketat.
+   - Uji di KEDUANYA, tapi antisipasi Apple lebih banyak scrutiny.
+
+==================================================================================
+KEPUTUSAN/ASET YANG DIBUTUHKAN DARI MALIK
+==================================================================================
+- Restoran mana untuk PILOT pertama? (saran: Samurai — sudah punya menu 79 item + materi;
+  atau Kirin kalau menu/foto Kirin sudah masuk).
+- Akun Apple Developer + Google Play atas nama Orderly (Malik daftar / sediakan).
+- Aset per app: logo (hi-res), ikon app, screenshot, deskripsi store.
+- (Untuk pilot) konfirmasi restoran pilot pickup-only dulu.
+
+==================================================================================
+VERIFIKASI (Definition of Done fase ini)
+==================================================================================
+[ ] Satu codebase mobile config-driven; app di-generate per tenant dari config (bukan clone).
+[ ] Backend SAMA dengan web (/api/...); tidak ada backend baru.
+[ ] Tidak ada kredensial/secret di app (cek: decompile bundle tidak menemukan key).
+[ ] MVP pickup jalan: menu -> cart -> pickup -> Square card -> order -> kitchen -> anchor (mode tenant).
+[ ] Delivery TIDAK ada di app (sama seperti web, sampai Stripe live).
+[ ] SATU app pilot (Samurai/Kirin) siap submit, branded penuh (bukan template kosong).
+[ ] Metadata store unik & lengkap untuk app pilot.
+[ ] Lapisan pembayaran diabstraksi (mudah ganti ke Stripe nanti).
+
+==================================================================================
+URUTAN
+==================================================================================
+1. Arsitektur mobile config-driven + backend sama (Bagian 1).
+2. MVP pickup (Bagian 2) — paritas web pickup.
+3. Siapkan 1 app pilot + akun store + aset (Bagian 3) -> submit pilot.
+4. Setelah pilot lolos + Stripe live: delivery + Stripe + generate app restoran lain.
+
+CATATAN: Ini fase membangun ARSITEKTUR + 1 pilot. Jangan kejar banyak app dulu. Stripe & delivery
+menyusul setelah legal Orderly selesai. Beri tahu Malik keputusan pilot & aset yang dibutuhkan.
+Terima kasih.

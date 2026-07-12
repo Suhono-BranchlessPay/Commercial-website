@@ -31,7 +31,7 @@ import {
   isOwnerConfigured,
   syncOrderToOwner,
 } from "../integrations/owner";
-import { upsertCustomerAndAddress } from "../lib/customers";
+import { upsertCustomerAndAddress, recordCustomerPaidOrder } from "../lib/customers";
 import {
   addressFingerprint,
   isWithinDeliveryRadius,
@@ -40,6 +40,15 @@ import {
 } from "../lib/address";
 import { displayName } from "../lib/phone";
 import { envFallbackTenant, getTenantId } from "../lib/tenant";
+import {
+  buildOrderMoneyCents,
+  centsToDollars,
+  dollarsToCents,
+} from "../lib/money";
+import {
+  defaultExplorerUrl,
+  enqueueOrderCompletedWebhook,
+} from "../lib/bridgeWebhook";
 
 const router = Router();
 
@@ -119,26 +128,27 @@ router.post("/orders", async (req, res): Promise<void> => {
     }
 
     const TAX_RATE = 0.07;
-    let subtotal = 0;
+    let subtotalCents = 0;
     const lines = input.items.map((item) => {
       const menuItem = menuItemMap[item.menuItemId];
       const unitPrice = menuItem?.price ?? 0;
-      const lineSubtotal = unitPrice * item.quantity;
-      subtotal += lineSubtotal;
+      const unitPriceCents = dollarsToCents(unitPrice);
+      const lineSubtotalCents = unitPriceCents * item.quantity;
+      subtotalCents += lineSubtotalCents;
       return {
         menuItemId: item.menuItemId,
         menuItemName: menuItem?.name ?? "Unknown item",
         quantity: item.quantity,
         unitPrice,
-        subtotal: lineSubtotal,
+        subtotal: centsToDollars(lineSubtotalCents),
         specialInstructions: item.specialInstructions ?? null,
       };
     });
 
-    const tax = Math.round(subtotal * TAX_RATE * 100) / 100;
+    const taxCents = Math.round(subtotalCents * TAX_RATE);
     const orderId = randomUUID();
 
-    let deliveryFee = 0;
+    let deliveryFeeCents = 0;
     let deliveryAddressFormatted: string | null = null;
 
     if (input.orderType === "delivery") {
@@ -171,10 +181,22 @@ router.post("/orders", async (req, res): Promise<void> => {
         res.status(400).json({ error: "Delivery address does not match quote." });
         return;
       }
-      deliveryFee = quote.deliveryFeeCents / 100;
+      deliveryFeeCents = quote.deliveryFeeCents;
     }
 
-    const total = Math.round((subtotal + tax + deliveryFee) * 100) / 100;
+    const moneyPreview = buildOrderMoneyCents({
+      subtotalCents,
+      taxCents,
+      tipCents: 0,
+      platformFeeCents: 0,
+      deliveryFeeCents,
+      processingFeeCents: 0,
+      discountCents: 0,
+    });
+    const subtotal = centsToDollars(moneyPreview.subtotalCents);
+    const tax = centsToDollars(moneyPreview.taxCents);
+    const deliveryFee = centsToDollars(moneyPreview.deliveryFeeCents);
+    const total = centsToDollars(moneyPreview.totalCents);
 
     const customerRecord = await upsertCustomerAndAddress({
       tenantId,
@@ -280,8 +302,18 @@ router.post("/orders", async (req, res): Promise<void> => {
       return;
     }
 
-    const chargedTotal =
-      Math.round(squareResult.chargedTotalCents) / 100;
+    const chargedTotalCents = Math.round(squareResult.chargedTotalCents);
+    const money = buildOrderMoneyCents({
+      subtotalCents,
+      taxCents,
+      tipCents: 0,
+      platformFeeCents: 0,
+      deliveryFeeCents,
+      processingFeeCents: 0,
+      discountCents: 0,
+      chargedTotalCents,
+    });
+    const chargedTotal = centsToDollars(money.totalCents);
 
     await db.insert(ordersTable).values({
       id: orderId,
@@ -293,13 +325,25 @@ router.post("/orders", async (req, res): Promise<void> => {
       customerEmail: customerRecord.email,
       orderType: input.orderType,
       deliveryAddress: deliveryAddressFormatted,
-      subtotal,
-      tax,
+      subtotal: centsToDollars(money.subtotalCents),
+      tax: centsToDollars(money.taxCents),
+      tip: centsToDollars(money.tipCents),
+      platformFee: centsToDollars(money.platformFeeCents),
+      processingFee: centsToDollars(money.processingFeeCents),
+      discount: centsToDollars(money.discountCents),
       total: chargedTotal,
+      deliveryFee: centsToDollars(money.deliveryFeeCents),
+      subtotalCents: money.subtotalCents,
+      taxCents: money.taxCents,
+      tipCents: money.tipCents,
+      platformFeeCents: money.platformFeeCents,
+      deliveryFeeCents: money.deliveryFeeCents,
+      processingFeeCents: money.processingFeeCents,
+      discountCents: money.discountCents,
+      totalCents: money.totalCents,
       status: "pending",
       paymentTiming,
       paymentStatus,
-      deliveryFee,
       doordashExternalDeliveryId:
         input.orderType === "delivery"
           ? (input.doordashExternalDeliveryId ?? null)
@@ -317,6 +361,16 @@ router.post("/orders", async (req, res): Promise<void> => {
       });
     }
 
+    try {
+      await recordCustomerPaidOrder({
+        tenantId,
+        customerId: customerRecord.customerId,
+        totalCents: money.totalCents,
+      });
+    } catch (err) {
+      req.log.error({ err, orderId }, "Customer aggregate update failed");
+    }
+
     let doordashTrackingUrl: string | null = null;
     let doordashStatus: string | null = null;
     let estimatedDropoffTime: string | null = null;
@@ -329,7 +383,7 @@ router.post("/orders", async (req, res): Promise<void> => {
           lastName: input.lastName,
           customerPhone: customerRecord.phoneE164,
           address: input.address!,
-          orderValueCents: Math.round((subtotal + tax) * 100),
+          orderValueCents: subtotalCents + taxCents,
           items: lines.map((l) => ({
             name: l.menuItemName,
             quantity: l.quantity,
@@ -405,16 +459,20 @@ router.post("/orders", async (req, res): Promise<void> => {
           })),
         });
         if (anchor.ok) {
+          const chainTxHash = anchor.txHash ?? null;
+          const bpExplorerUrl = defaultExplorerUrl(chainTxHash);
           await db
             .update(ordersTable)
             .set({
               bpAnchorId: anchor.anchorId ?? null,
               bpContentHash: anchor.contentHash ?? null,
               bpAnchorStatus: anchor.status ?? "queued",
+              chainTxHash,
+              bpExplorerUrl,
             })
             .where(eq(ordersTable.id, orderId));
           req.log.info(
-            { anchorId: anchor.anchorId, status: anchor.status },
+            { anchorId: anchor.anchorId, status: anchor.status, chainTxHash },
             "BP post-pay anchor queued",
           );
         } else {
@@ -468,6 +526,50 @@ router.post("/orders", async (req, res): Promise<void> => {
       .from(orderLinesTable)
       .where(eq(orderLinesTable.orderId, orderId));
 
+    const saved = order[0];
+    if (saved) {
+      void enqueueOrderCompletedWebhook({
+        event: "order.completed.v1",
+        idempotency_key: `order.completed.v1:${saved.id}`,
+        tenant_id: saved.tenantId,
+        order: {
+          id: saved.id,
+          order_type: saved.orderType,
+          payment_status: saved.paymentStatus,
+          status: saved.status,
+          money: {
+            subtotal_cents: saved.subtotalCents,
+            tax_cents: saved.taxCents,
+            tip_cents: saved.tipCents,
+            platform_fee_cents: saved.platformFeeCents,
+            delivery_fee_cents: saved.deliveryFeeCents,
+            processing_fee_cents: saved.processingFeeCents,
+            discount_cents: saved.discountCents,
+            total_cents: saved.totalCents,
+          },
+          customer: {
+            id: saved.customerId,
+            name: saved.customerName,
+            phone: saved.customerPhone,
+            email: saved.customerEmail,
+          },
+          square_order_id: saved.squareOrderId,
+          square_payment_id: saved.squarePaymentId,
+          created_at: saved.createdAt?.toISOString() ?? null,
+        },
+        anchor: {
+          bp_anchor_id: saved.bpAnchorId,
+          bp_anchor_status: saved.bpAnchorStatus,
+          bp_content_hash: saved.bpContentHash,
+          chain_tx_hash: saved.chainTxHash,
+          explorer_url:
+            saved.bpExplorerUrl ?? defaultExplorerUrl(saved.chainTxHash),
+        },
+      }).catch((err) => {
+        req.log.error({ err, orderId }, "Bridge order.completed webhook failed");
+      });
+    }
+
     res.status(201).json({
       ...order[0],
       firstName: input.firstName,
@@ -476,6 +578,9 @@ router.post("/orders", async (req, res): Promise<void> => {
       doordashTrackingUrl,
       estimatedDropoffTime,
       createdAt: order[0]?.createdAt?.toISOString(),
+      chainTxHash: order[0]?.chainTxHash ?? null,
+      bpExplorerUrl:
+        order[0]?.bpExplorerUrl ?? defaultExplorerUrl(order[0]?.chainTxHash),
     });
   } catch (err) {
     req.log.error({ err }, "Failed to create order");
