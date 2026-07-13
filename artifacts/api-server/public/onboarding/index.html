@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>Orderly — Self-Serve Onboarding (Skeleton)</title>
+<style>
+  :root{--paper:#FCFBF8;--ink:#16201A;--muted:#5E655D;--line:#E5E2D8;--green:#1E6A4F;--green-deep:#154B39;--green-soft:#E7F0EA;--amber:#E7A23A;--danger:#B4453C}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#F5F3EC;color:var(--ink);font-family:system-ui,-apple-system,sans-serif;padding:24px;min-height:100vh}
+  .wrap{max-width:640px;margin:0 auto}
+  .banner{background:var(--green-soft);color:var(--green-deep);border:1px solid var(--green);border-radius:10px;padding:12px 16px;font-size:13px;margin-bottom:18px;font-weight:600}
+  h1{font-size:22px;margin-bottom:4px}
+  .sub{color:var(--muted);font-size:14px;margin-bottom:22px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px;margin-bottom:16px}
+  .card h2{font-size:15px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+  .step-num{width:22px;height:22px;border-radius:50%;background:var(--green);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:12px;flex:none}
+  label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin:10px 0 4px}
+  input,select,textarea{width:100%;border:1.5px solid var(--line);border-radius:8px;padding:9px 11px;font-size:14px;font-family:inherit}
+  textarea{min-height:80px;resize:vertical}
+  button{font-family:inherit;cursor:pointer;background:var(--green);color:#fff;border:none;border-radius:999px;padding:10px 18px;font-weight:700;font-size:13px;margin-top:12px}
+  button:hover{background:var(--green-deep)}
+  button:disabled{background:#B9C4BD;cursor:not-allowed}
+  button.secondary{background:transparent;color:var(--green-deep);border:1.5px solid var(--line)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .row>*{flex:1;min-width:140px}
+  pre{background:#0f1512;color:#dff0e6;border-radius:8px;padding:12px;font-size:12px;overflow:auto;max-height:220px;margin-top:10px}
+  .status{font-size:12px;color:var(--muted);margin-top:8px}
+  .hidden{display:none}
+  .theme-preview{display:flex;gap:8px;margin-top:8px}
+  .swatch{width:28px;height:28px;border-radius:6px;border:1px solid var(--line)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="banner">
+    SKELETON — Blok 3.1 preview only. Nothing here creates a live/active tenant
+    or touches Square/payments. See <code>docs/SELF_SERVE_ONBOARDING.md</code>.
+  </div>
+  <h1>Self-Serve Onboarding</h1>
+  <p class="sub">Multi-step wizard skeleton — walks a prospective restaurant through a draft config stored server-side. No payments, no live menu changes.</p>
+
+  <div class="card" id="step-start">
+    <h2><span class="step-num">1</span> Restaurant basics</h2>
+    <div class="row">
+      <div><label>Restaurant name</label><input id="f-name" placeholder="Golden Dragon" /></div>
+      <div><label>Cuisine</label><input id="f-cuisine" placeholder="Chinese" /></div>
+    </div>
+    <label>Address</label><input id="f-address" placeholder="123 Main St, City, ST" />
+    <div class="row">
+      <div><label>Contact email</label><input id="f-email" placeholder="owner@example.com" /></div>
+      <div><label>Contact phone</label><input id="f-phone" placeholder="+15551234567" /></div>
+    </div>
+    <button id="btn-start">Start session</button>
+    <div class="status" id="status-start"></div>
+  </div>
+
+  <div class="card hidden" id="step-theme">
+    <h2><span class="step-num">2</span> Auto theme (stub)</h2>
+    <p class="sub" style="margin-bottom:0">Deterministic palette from name hash — not ML, replace later.</p>
+    <label>Logo URL (optional)</label><input id="f-logo" placeholder="https://..." />
+    <button id="btn-theme">Generate stub theme</button>
+    <div class="theme-preview" id="theme-preview"></div>
+  </div>
+
+  <div class="card hidden" id="step-variant">
+    <h2><span class="step-num">3</span> Layout variant</h2>
+    <select id="f-variant">
+      <option value="classic">Classic</option>
+      <option value="modern">Modern</option>
+      <option value="minimal">Minimal</option>
+    </select>
+    <button id="btn-variant">Save variant</button>
+  </div>
+
+  <div class="card hidden" id="step-menu">
+    <h2><span class="step-num">4</span> Menu draft (JSON, not published)</h2>
+    <textarea id="f-menu">[{"name":"Spring Rolls","price":6.5,"category":"Appetizers"}]</textarea>
+    <button id="btn-menu">Save draft</button>
+  </div>
+
+  <div class="card hidden" id="step-domain">
+    <h2><span class="step-num">5</span> Domain</h2>
+    <label>Subdomain</label><input id="f-subdomain" placeholder="golden-dragon" />
+    <button id="btn-domain">Save domain</button>
+  </div>
+
+  <div class="card hidden" id="step-preview">
+    <h2><span class="step-num">6</span> Preview</h2>
+    <button id="btn-preview" class="secondary">Refresh preview</button>
+    <button id="btn-publish">Try publish (likely 501)</button>
+    <pre id="preview-out"></pre>
+  </div>
+</div>
+
+<script>
+  const API = "/api/onboarding";
+  let sessionId = null;
+
+  function show(id){ document.getElementById(id).classList.remove("hidden"); }
+  function j(el){ return document.getElementById(el).value.trim(); }
+
+  async function post(path, body){
+    const r = await fetch(API + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    return { ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) };
+  }
+  async function get(path){
+    const r = await fetch(API + path);
+    return { ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) };
+  }
+
+  document.getElementById("btn-start").onclick = async () => {
+    const contact = {};
+    if (j("f-email")) contact.email = j("f-email");
+    if (j("f-phone")) contact.phone = j("f-phone");
+    const { ok, data } = await post("/start", {
+      restaurantName: j("f-name"),
+      address: j("f-address") || undefined,
+      cuisine: j("f-cuisine") || undefined,
+      contact: Object.keys(contact).length ? contact : undefined,
+    });
+    if (!ok) {
+      document.getElementById("status-start").textContent = "Error: " + JSON.stringify(data.error);
+      return;
+    }
+    sessionId = data.session.id;
+    document.getElementById("status-start").textContent = "Session: " + sessionId;
+    show("step-theme"); show("step-variant"); show("step-menu"); show("step-domain"); show("step-preview");
+  };
+
+  document.getElementById("btn-theme").onclick = async () => {
+    const { ok, data } = await post(`/${sessionId}/theme`, { logoUrl: j("f-logo") || undefined });
+    if (!ok) return alert(JSON.stringify(data));
+    const t = data.session.theme || {};
+    const el = document.getElementById("theme-preview");
+    el.innerHTML = "";
+    ["primary","accent"].forEach((k) => {
+      const sw = document.createElement("div");
+      sw.className = "swatch";
+      sw.style.background = "hsl(" + (t[k] || "0 0% 80%") + ")";
+      sw.title = k + ": " + t[k];
+      el.appendChild(sw);
+    });
+  };
+
+  document.getElementById("btn-variant").onclick = async () => {
+    const { ok, data } = await post(`/${sessionId}/variant`, { variant: j("f-variant") });
+    if (!ok) alert(JSON.stringify(data));
+  };
+
+  document.getElementById("btn-menu").onclick = async () => {
+    let items;
+    try { items = JSON.parse(j("f-menu")); } catch { return alert("Invalid JSON"); }
+    const { ok, data } = await post(`/${sessionId}/menu-draft`, { items });
+    if (!ok) alert(JSON.stringify(data));
+  };
+
+  document.getElementById("btn-domain").onclick = async () => {
+    const { ok, data } = await post(`/${sessionId}/domain`, { subdomain: j("f-subdomain") });
+    if (!ok) alert(JSON.stringify(data));
+  };
+
+  document.getElementById("btn-preview").onclick = async () => {
+    const { data } = await get(`/${sessionId}/preview`);
+    document.getElementById("preview-out").textContent = JSON.stringify(data, null, 2);
+  };
+
+  document.getElementById("btn-publish").onclick = async () => {
+    const { status, data } = await post(`/${sessionId}/publish`, {});
+    document.getElementById("preview-out").textContent = "HTTP " + status + "\n" + JSON.stringify(data, null, 2);
+  };
+</script>
+</body>
+</html>

@@ -13,6 +13,7 @@ import bridgeRouter from "./bridge";
 import dashboardRouter from "./dashboard";
 import upsellRouter from "./upsell";
 import analyticsRouter from "./analytics";
+import onboardingRouter from "./onboarding";
 
 const router: IRouter = Router();
 
@@ -30,5 +31,6 @@ router.use(upsellRouter);
 router.use(analyticsRouter);
 router.use("/bridge", bridgeRouter);
 router.use("/dashboard", dashboardRouter);
+router.use("/onboarding", onboardingRouter);
 
 export default router;
