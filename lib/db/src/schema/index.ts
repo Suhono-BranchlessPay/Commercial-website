@@ -8,3 +8,4 @@ export * from "./dashboard";
 export * from "./analytics";
 export * from "./qrScans";
 export * from "./onboarding";
+export * from "./socialInbox";
