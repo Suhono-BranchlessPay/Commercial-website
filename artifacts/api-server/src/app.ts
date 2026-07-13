@@ -13,9 +13,11 @@ import {
   getStorefrontDist,
 } from "./middleware/spaHtml";
 import { requireOrderlyDashboardHostPage } from "./lib/dashboardHost";
+import qrRouter from "./routes/qr";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DASHBOARD_ROOT = path.resolve(__dirname, "../public/dashboard");
+const ONBOARDING_ROOT = path.resolve(__dirname, "../public/onboarding");
 
 const app: Express = express();
 
@@ -48,6 +50,9 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Dynamic flyer QR — must be before SPA catch-all.
+app.use(qrRouter);
+
 app.use("/api/uploads", express.static(UPLOADS_ROOT));
 app.use("/api", tenantMiddleware, router);
 
@@ -71,6 +76,21 @@ app.use(
     },
   }),
 );
+
+// Self-serve onboarding wizard SKELETON (Blok 3.1) — same host gate as the
+// console, since it is an internal/staff-facing prototype, not a restaurant
+// storefront. The API itself (/api/onboarding/*) is not host-gated so it can
+// be curl'd directly for verification.
+app.use("/onboarding", requireOrderlyDashboardHostPage);
+app.use("/onboarding", (_req, res, next) => {
+  res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
+  next();
+});
+app.get(["/onboarding", "/onboarding/"], (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.sendFile(path.join(ONBOARDING_ROOT, "index.html"));
+});
+app.use("/onboarding", express.static(ONBOARDING_ROOT, { index: false }));
 
 // White-label SPA: static assets + Host-based tenant SEO injection into index.html.
 // Requires STOREFRONT_DIST (path to Vite dist/public). Nginx should proxy document

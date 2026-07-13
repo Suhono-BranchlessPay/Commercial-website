@@ -15,7 +15,8 @@ function isExemptPath(path: string): boolean {
     path === "/version" ||
     path.startsWith("/webhooks/") ||
     path.startsWith("/bridge") ||
-    path.startsWith("/dashboard")
+    path.startsWith("/dashboard") ||
+    path.startsWith("/onboarding")
   );
 }
 
