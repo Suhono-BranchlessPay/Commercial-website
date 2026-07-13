@@ -134,6 +134,14 @@
     <div class="scope-note" id="scopeNote"></div>
     <div class="stats" id="stats"></div>
     <div class="panel">
+      <div class="panel-h"><h2>Live orders</h2><span class="live"><span class="pulse"></span>Kitchen board</span></div>
+      <div id="liveStats" class="empty">Loading…</div>
+      <table>
+        <thead><tr><th>Order</th><th>Status</th><th class="hide-sm">When</th><th>Channel</th><th class="num">Total</th><th>Customer</th></tr></thead>
+        <tbody id="liveRows"></tbody>
+      </table>
+    </div>
+    <div class="panel">
       <div class="panel-h"><h2>Anchor verification</h2><span class="live"><span class="pulse"></span>On-chain</span></div>
       <div id="anchorStats" class="empty">Loading…</div>
       <div style="padding:0 20px 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -166,6 +174,10 @@
         <div class="panel-h"><h2>Orders by day</h2></div>
         <div id="dayBars" style="padding:12px 0 16px"></div>
       </div>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><h2>Payments & tips</h2><span class="live"><span class="pulse"></span>Honest</span></div>
+      <div id="payStats" class="empty">Loading…</div>
     </div>
     <div class="panel">
       <div class="panel-h"><h2>Customer intelligence</h2><span class="live"><span class="pulse"></span>Insight only</span></div>
@@ -288,13 +300,15 @@ async function loadAll() {
       api('/reports/items?' + q),
       api('/reports/by-time?' + q),
       api('/reports/anchors?' + q),
+      api('/reports/live-orders?' + q),
+      api('/reports/payments?' + q),
     ];
     if (tenant || (user && user.role === 'manager')) {
       requests.push(api('/reports/customers?' + q));
     } else {
       requests.push(Promise.resolve(null));
     }
-    const [summary, items, byTime, anchors, customers] = await Promise.all(requests);
+    const [summary, items, byTime, anchors, live, payments, customers] = await Promise.all(requests);
 
     const t = summary.totals || {};
     const a = summary.anchors || {};
@@ -316,6 +330,20 @@ async function loadAll() {
       const link = o.explorer_url ? '<a href="' + o.explorer_url + '" target="_blank" rel="noopener noreferrer">' + (o.chain_tx_hash ? o.chain_tx_hash.slice(0, 10) + '…' : 'open') + '</a>' : '—';
       return '<tr><td class="mono">' + o.id.slice(0, 8) + '</td><td class="hide-sm">' + (o.created_at ? new Date(o.created_at).toLocaleString() : '—') + '</td><td class="num">' + money(o.total_cents) + '</td><td>' + (o.bp_anchor_status || (o.chain_tx_hash ? 'anchored' : '—')) + '</td><td>' + link + '</td></tr>';
     }).join('') : '<tr><td colspan="5" class="empty">No paid orders in this range.</td></tr>';
+
+    const lc = (live && live.counts) || {};
+    $('liveStats').innerHTML = '<div style="padding:14px 20px;font-size:14px">Pending <b>' + (lc.pending||0) + '</b> · Preparing <b>' + (lc.preparing||0) + '</b> · Ready <b>' + (lc.ready||0) + '</b> · Completed <b>' + (lc.completed||0) + '</b> · Cancelled <b>' + (lc.cancelled||0) + '</b></div>';
+    const lrows = (live && live.orders) || [];
+    $('liveRows').innerHTML = lrows.length ? lrows.slice(0, 40).map((o) => {
+      return '<tr><td class="mono">' + o.id.slice(0, 8) + '</td><td>' + (o.status || '—') + '</td><td class="hide-sm">' + (o.created_at ? new Date(o.created_at).toLocaleString() : '—') + '</td><td>' + (o.channel || '—') + '</td><td class="num">' + money(o.total_cents) + '</td><td>' + (o.customer_name || '—') + '</td></tr>';
+    }).join('') : '<tr><td colspan="6" class="empty">No orders in this range.</td></tr>';
+
+    const tip = (payments && payments.tips) || {};
+    const methods = (payments && payments.methods) || [];
+    $('payStats').innerHTML = '<div style="padding:14px 20px;font-size:14px">' +
+      methods.map((m) => m.label + ': <b>' + m.orders + '</b>').join(' · ') +
+      ' · Tips: <b>' + money(tip.tip_cents || 0) + '</b> (' + (tip.orders_with_tip || 0) + ' orders, ' + (tip.tip_rate || 0) + '% tip rate)' +
+      '<div style="margin-top:8px;font-size:12px;color:var(--muted)">' + ((payments && payments.note) || '') + '</div></div>';
 
     const itemList = items.items || [];
     $('itemsEmpty').style.display = itemList.length ? 'none' : 'block';
@@ -340,7 +368,8 @@ async function loadAll() {
       $('custRows').innerHTML = '';
     } else {
       const s = customers.segments || {};
-      $('segStats').innerHTML = '<div style="padding:14px 20px;font-size:14px">New <b>' + (s.new||0) + '</b> · Regular <b>' + (s.regular||0) + '</b> · VIP <b>' + (s.vip||0) + '</b> · Churn-risk <b>' + (s.churn_risk||0) + '</b></div>';
+      const r = customers.retention || {};
+      $('segStats').innerHTML = '<div style="padding:14px 20px;font-size:14px">New <b>' + (s.new||0) + '</b> · Returning <b>' + (r.returning_customers||0) + '</b> · Repeat rate <b>' + (r.repeat_rate_pct||0) + '%</b> · Regular <b>' + (s.regular||0) + '</b> · VIP <b>' + (s.vip||0) + '</b> · Churn-risk <b>' + (s.churn_risk||0) + '</b></div>';
       const rows = customers.customers || [];
       $('custRows').innerHTML = rows.length ? rows.slice(0, 40).map((c) => '<tr><td>' + (c.name || c.phone) + '</td><td class="mono">' + c.segment + '</td><td class="num">' + c.order_count + '</td><td class="num">' + money(c.ltv_cents) + '</td><td class="num">' + money(c.aov_cents) + '</td><td>' + (c.favorite_item ? c.favorite_item.name : '—') + '</td><td>' + (c.last_order_at ? new Date(c.last_order_at).toLocaleDateString() : '—') + '</td></tr>').join('') : '<tr><td colspan="7" class="empty">No customers yet for this tenant.</td></tr>';
     }

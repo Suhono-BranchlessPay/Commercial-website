@@ -16,7 +16,9 @@ import {
   buildAnchorReport,
   buildExportRows,
   buildItemSales,
+  buildLiveOrders,
   buildOrdersByHourDay,
+  buildPaymentBreakdown,
   buildReportSummary,
   listTenantsForMaster,
   ordersToCsv,
@@ -327,6 +329,40 @@ router.get(
     } catch (err) {
       req.log?.error({ err }, "Dashboard CSV export failed");
       res.status(500).json({ error: "Failed to export CSV" });
+    }
+  },
+);
+
+router.get(
+  "/reports/live-orders",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const tenantId = scopedTenant(req, res);
+      if (tenantId === undefined) return;
+      const range = parseRange(req.query.range);
+      const data = await buildLiveOrders({ tenantId, range });
+      res.json(data);
+    } catch (err) {
+      req.log?.error({ err }, "Dashboard live orders failed");
+      res.status(500).json({ error: "Failed to build live orders" });
+    }
+  },
+);
+
+router.get(
+  "/reports/payments",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const tenantId = scopedTenant(req, res);
+      if (tenantId === undefined) return;
+      const range = parseRange(req.query.range);
+      const data = await buildPaymentBreakdown({ tenantId, range });
+      res.json(data);
+    } catch (err) {
+      req.log?.error({ err }, "Dashboard payments report failed");
+      res.status(500).json({ error: "Failed to build payment breakdown" });
     }
   },
 );

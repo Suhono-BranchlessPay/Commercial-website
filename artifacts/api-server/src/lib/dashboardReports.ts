@@ -183,6 +183,105 @@ export async function buildOrdersByHourDay(input: {
   return { by_hour: byHour, by_day_of_week: byDow };
 }
 
+/**
+ * Live kitchen board — statuses from real orders (no invented rows).
+ */
+export async function buildLiveOrders(input: {
+  tenantId: string | null;
+  range: ReportRange;
+}) {
+  const { from, to } = rangeToDates(input.range);
+  const parts = [
+    gte(ordersTable.createdAt, from),
+    lte(ordersTable.createdAt, to),
+  ];
+  if (input.tenantId) parts.push(eq(ordersTable.tenantId, input.tenantId));
+
+  const orders = await db
+    .select()
+    .from(ordersTable)
+    .where(and(...parts))
+    .orderBy(desc(ordersTable.createdAt))
+    .limit(100);
+
+  const counts: Record<string, number> = {
+    pending: 0,
+    preparing: 0,
+    ready: 0,
+    completed: 0,
+    cancelled: 0,
+    other: 0,
+  };
+  for (const o of orders) {
+    const s = (o.status || "other").toLowerCase();
+    if (s in counts) counts[s] += 1;
+    else counts.other += 1;
+  }
+
+  return {
+    range: input.range,
+    counts,
+    orders: orders.map((o) => ({
+      id: o.id,
+      tenant_id: o.tenantId,
+      status: o.status,
+      order_type: o.orderType,
+      channel: o.channel,
+      total_cents: o.totalCents,
+      tip_cents: o.tipCents,
+      payment_status: o.paymentStatus,
+      created_at: o.createdAt?.toISOString() ?? null,
+      paid_at: o.paidAt?.toISOString() ?? null,
+      ready_at: o.readyAt?.toISOString() ?? null,
+      completed_at: o.completedAt?.toISOString() ?? null,
+      customer_name: o.customerName,
+    })),
+  };
+}
+
+/**
+ * Honest payment view — Orderly checkout is Square card prepaid.
+ * Apple Pay / Google Pay / Cash are NOT stored yet → not invented here.
+ */
+export async function buildPaymentBreakdown(input: {
+  tenantId: string | null;
+  range: ReportRange;
+}) {
+  const { from, to } = rangeToDates(input.range);
+  const where = paidTenantFilter(input.tenantId, from, to);
+  const orders = await db.select().from(ordersTable).where(where);
+
+  const squareCard = orders.filter((o) => Boolean(o.squarePaymentId)).length;
+  const paidNoSquareId = orders.length - squareCard;
+  const tipOrders = orders.filter((o) => (o.tipCents || 0) > 0).length;
+  const tipCents = orders.reduce((s, o) => s + (o.tipCents || 0), 0);
+
+  return {
+    note: "All Orderly online checkouts are Square card. Apple Pay / Google Pay / cash split is not stored yet — we do not invent those buckets.",
+    methods: [
+      {
+        method: "square_card",
+        label: "Card (Square online)",
+        orders: squareCard,
+      },
+      {
+        method: "paid_other",
+        label: "Paid (no Square payment id)",
+        orders: paidNoSquareId,
+      },
+    ].filter((m) => m.orders > 0 || m.method === "square_card"),
+    tips: {
+      orders_with_tip: tipOrders,
+      tip_cents: tipCents,
+      tip_rate:
+        orders.length > 0
+          ? Math.round((tipOrders / orders.length) * 1000) / 10
+          : 0,
+    },
+    total_paid_orders: orders.length,
+  };
+}
+
 export async function buildAnchorReport(input: {
   tenantId: string | null;
   range: ReportRange;
