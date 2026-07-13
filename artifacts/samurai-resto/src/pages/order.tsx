@@ -164,7 +164,6 @@ export default function Order() {
   const values    = form.getValues();
   const orderType = form.watch("orderType");
   const tax       = cartTotal * 0.07;
-  const deliveryFee = orderType === "delivery" ? (deliveryQuote?.deliveryFee ?? 0) : 0;
   const baseTotal = orderType === "delivery" && deliveryQuote
     ? deliveryQuote.grandTotal
     : cartTotal + tax;
