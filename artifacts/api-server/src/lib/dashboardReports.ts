@@ -459,8 +459,13 @@ export async function buildQrScanReport(input: {
     .limit(200);
 
   const byTenant = new Map<string, number>();
+  const bySrc = new Map<string, number>();
   for (const s of scans) {
     byTenant.set(s.tenantSlug, (byTenant.get(s.tenantSlug) || 0) + 1);
+    const meta = (s.meta || {}) as Record<string, unknown>;
+    const srcKey =
+      typeof meta.src === "string" && meta.src.trim() ? meta.src.trim() : "(none)";
+    bySrc.set(srcKey, (bySrc.get(srcKey) || 0) + 1);
   }
 
   return {
@@ -469,14 +474,22 @@ export async function buildQrScanReport(input: {
       slug,
       scans: scans_count,
     })),
-    recent: scans.slice(0, 30).map((s) => ({
-      id: s.id,
-      tenant_id: s.tenantId,
-      tenant_slug: s.tenantSlug,
-      redirect_url: s.redirectUrl,
-      created_at: s.createdAt?.toISOString() ?? null,
-      user_agent: s.userAgent,
+    by_src: [...bySrc.entries()].map(([src, scans_count]) => ({
+      src,
+      scans: scans_count,
     })),
+    recent: scans.slice(0, 30).map((s) => {
+      const meta = (s.meta || {}) as Record<string, unknown>;
+      return {
+        id: s.id,
+        tenant_id: s.tenantId,
+        tenant_slug: s.tenantSlug,
+        src: typeof meta.src === "string" ? meta.src : null,
+        redirect_url: s.redirectUrl,
+        created_at: s.createdAt?.toISOString() ?? null,
+        user_agent: s.userAgent,
+      };
+    }),
   };
 }
 

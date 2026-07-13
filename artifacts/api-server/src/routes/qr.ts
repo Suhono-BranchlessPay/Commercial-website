@@ -1,6 +1,7 @@
 /**
  * Dynamic QR redirect — GET /r/:tenantSlug
  * Print once; change landing URL via tenant config (domain + order path) without reprinting.
+ * Optional ?src= (e.g. flyer|table|window) is logged and forwarded to the landing URL.
  */
 import { Router, type Request, type Response } from "express";
 import { createHash, randomUUID } from "crypto";
@@ -17,29 +18,52 @@ const SLUG_ALIASES: Record<string, string> = {
   linton: "samurai-linton",
 };
 
+const SRC_MAX = 64;
+const SRC_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
+
 function hashIp(raw: string | undefined): string | null {
   if (!raw) return null;
   const first = raw.split(",")[0]?.trim() || raw;
   return createHash("sha256").update(first).digest("hex").slice(0, 32);
 }
 
-function orderLandingUrl(tenant: {
-  domain: string;
-  theme: Record<string, unknown> | null;
-}): string {
+function sanitizeSrc(raw: unknown): string | null {
+  const s = String(raw ?? "").trim().slice(0, SRC_MAX);
+  if (!s || !SRC_RE.test(s)) return null;
+  return s.toLowerCase();
+}
+
+function orderLandingUrl(
+  tenant: {
+    domain: string;
+    theme: Record<string, unknown> | null;
+  },
+  src: string | null,
+): string {
   const theme = tenant.theme || {};
   const custom =
     typeof theme.qrRedirectUrl === "string" ? theme.qrRedirectUrl.trim() : "";
+  let base: string;
   if (custom.startsWith("http://") || custom.startsWith("https://")) {
-    return custom;
+    base = custom;
+  } else {
+    const path =
+      typeof theme.orderPath === "string" && theme.orderPath.trim()
+        ? theme.orderPath.trim()
+        : "/order";
+    const host = tenant.domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    base = `https://${host}${normalizedPath}`;
   }
-  const path =
-    typeof theme.orderPath === "string" && theme.orderPath.trim()
-      ? theme.orderPath.trim()
-      : "/order";
-  const host = tenant.domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  return `https://${host}${normalizedPath}`;
+  if (!src) return base;
+  try {
+    const u = new URL(base);
+    if (!u.searchParams.has("src")) u.searchParams.set("src", src);
+    return u.toString();
+  } catch {
+    const sep = base.includes("?") ? "&" : "?";
+    return `${base}${sep}src=${encodeURIComponent(src)}`;
+  }
 }
 
 router.get(
@@ -54,6 +78,7 @@ router.get(
     }
 
     const slug = SLUG_ALIASES[raw] || raw;
+    const src = sanitizeSrc(req.query.src);
 
     try {
       const rows = await db
@@ -68,10 +93,13 @@ router.get(
         return;
       }
 
-      const redirectUrl = orderLandingUrl({
-        domain: tenant.domain,
-        theme: (tenant.theme as Record<string, unknown>) || {},
-      });
+      const redirectUrl = orderLandingUrl(
+        {
+          domain: tenant.domain,
+          theme: (tenant.theme as Record<string, unknown>) || {},
+        },
+        src,
+      );
 
       // Fire-and-forget scan log — never block the diner.
       void db
@@ -81,12 +109,19 @@ router.get(
           tenantId: tenant.id,
           tenantSlug: tenant.slug,
           redirectUrl,
-          userAgent: String(req.headers["user-agent"] || "").slice(0, 500) || null,
+          userAgent:
+            String(req.headers["user-agent"] || "").slice(0, 500) || null,
           ipHash: hashIp(
-            String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || ""),
+            String(
+              req.headers["x-forwarded-for"] || req.socket.remoteAddress || "",
+            ),
           ),
-          referer: String(req.headers.referer || req.headers.referrer || "").slice(0, 500) || null,
-          meta: { path_slug: raw },
+          referer:
+            String(req.headers.referer || req.headers.referrer || "").slice(
+              0,
+              500,
+            ) || null,
+          meta: { path_slug: raw, src: src ?? null },
         })
         .catch((err: unknown) => {
           logger.warn({ err, slug }, "qr_scans insert failed");

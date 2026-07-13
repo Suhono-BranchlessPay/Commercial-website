@@ -387,12 +387,14 @@ function renderQrScans(data) {
     return;
   }
   const by = (data.by_tenant || []).map((t) => t.slug + ': <b>' + t.scans + '</b>').join(' · ') || 'none yet';
+  const bySrc = (data.by_src || []).map((t) => (t.src || '(none)') + ': <b>' + t.scans + '</b>').join(' · ') || 'none yet';
   $('qrScanStats').innerHTML = '<div style="padding:14px 20px;font-size:14px">Scans in range: <b>' + (data.total_scans || 0) + '</b> · ' + by +
-    '<div style="margin-top:8px;font-size:12px;color:var(--muted)">Print URL: https://&lt;domain&gt;/r/&lt;slug&gt; (e.g. /r/samurai). Landing is config-driven — no reprint when order URL changes.</div></div>';
+    '<br>By src: ' + bySrc +
+    '<div style="margin-top:8px;font-size:12px;color:var(--muted)">Print URL: https://&lt;domain&gt;/r/&lt;slug&gt;?src=flyer (e.g. /r/samurai?src=flyer). Landing is config-driven — no reprint when order URL changes.</div></div>';
   const rows = data.recent || [];
   $('qrScanRows').innerHTML = rows.length
-    ? rows.slice(0, 12).map((s) => '<tr><td>' + (s.created_at ? new Date(s.created_at).toLocaleString() : '—') + '</td><td class="mono">' + (s.tenant_slug || '—') + '</td><td class="hide-sm" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--muted)">' + (s.user_agent || '—') + '</td></tr>').join('')
-    : '<tr><td colspan="3" class="empty">No QR scans in this range (table starts empty until flyers use /r/:slug).</td></tr>';
+    ? rows.slice(0, 12).map((s) => '<tr><td>' + (s.created_at ? new Date(s.created_at).toLocaleString() : '—') + '</td><td class="mono">' + (s.tenant_slug || '—') + (s.src ? ' · ' + s.src : '') + '</td><td class="hide-sm" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--muted)">' + (s.user_agent || '—') + '</td></tr>').join('')
+    : '<tr><td colspan="3" class="empty">No QR scans in this range (table starts empty until flyers use /r/:slug?src=…).</td></tr>';
 }
 
 function renderItems(items) {

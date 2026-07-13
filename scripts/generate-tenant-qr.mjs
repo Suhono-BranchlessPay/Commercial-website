@@ -20,11 +20,17 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
 
 function parseArgs(argv) {
-  const out = { slugs: [], base: "https://samurairesto.com", outDir: "artifacts/qr-print" };
+  const out = {
+    slugs: [],
+    base: "https://samurairesto.com",
+    outDir: "artifacts/qr-print",
+    src: "flyer",
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--base") out.base = String(argv[++i] || "").replace(/\/$/, "");
     else if (a === "--out") out.outDir = String(argv[++i] || "");
+    else if (a === "--src") out.src = String(argv[++i] || "flyer").trim() || "flyer";
     else if (a.startsWith("-")) {
       console.error("Unknown flag:", a);
       process.exit(1);
@@ -80,7 +86,7 @@ function writeWithNpx(url, pngPath, svgPath) {
   if (svg.status !== 0) throw new Error("npx qrcode SVG failed");
 }
 
-const { slugs, base, outDir } = parseArgs(process.argv.slice(2));
+const { slugs, base, outDir, src } = parseArgs(process.argv.slice(2));
 const absOut = resolve(root, outDir);
 mkdirSync(absOut, { recursive: true });
 
@@ -88,12 +94,12 @@ const QRCode = await loadQrcode();
 const manifest = [];
 
 for (const slug of slugs) {
-  const url = `${base}/r/${slug}`;
+  const url = `${base}/r/${slug}?src=${encodeURIComponent(src)}`;
   const pngPath = join(absOut, `${slug}-qr-2048.png`);
   const svgPath = join(absOut, `${slug}-qr.svg`);
   if (QRCode) await writeWithLib(QRCode, url, pngPath, svgPath);
   else writeWithNpx(url, pngPath, svgPath);
-  manifest.push({ slug, url, png: pngPath, svg: svgPath });
+  manifest.push({ slug, url, src, png: pngPath, svg: svgPath });
   console.log(`OK ${slug} → ${url}`);
   console.log(`  PNG ${pngPath}`);
   console.log(`  SVG ${svgPath}`);
@@ -101,6 +107,6 @@ for (const slug of slugs) {
 
 writeFileSync(
   join(absOut, "manifest.json"),
-  JSON.stringify({ generated_at: new Date().toISOString(), base, tenants: manifest }, null, 2),
+  JSON.stringify({ generated_at: new Date().toISOString(), base, src, tenants: manifest }, null, 2),
 );
 console.log(`\nHand these files to Malik for flyer print. Do not invent scan counts — scans start after /r is live.`);
