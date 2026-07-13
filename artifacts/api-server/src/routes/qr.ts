@@ -47,10 +47,11 @@ function orderLandingUrl(
   if (custom.startsWith("http://") || custom.startsWith("https://")) {
     base = custom;
   } else {
+    // Flyer QR should land on the menu (browse), not empty Checkout (/order).
     const path =
       typeof theme.orderPath === "string" && theme.orderPath.trim()
         ? theme.orderPath.trim()
-        : "/order";
+        : "/menu";
     const host = tenant.domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
     const normalizedPath = path.startsWith("/") ? path : `/${path}`;
     base = `https://${host}${normalizedPath}`;
