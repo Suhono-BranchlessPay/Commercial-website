@@ -145,10 +145,24 @@ export async function buildCustomerIntelligence(input: {
     churn_risk: profiles.filter((p) => p.segment === "churn_risk").length,
   };
 
+  const withOrders = profiles.filter((p) => p.order_count > 0);
+  const newCustomers = withOrders.filter((p) => p.order_count === 1).length;
+  const returningCustomers = withOrders.filter((p) => p.order_count >= 2).length;
+  const repeatRate =
+    withOrders.length > 0
+      ? Math.round((returningCustomers / withOrders.length) * 1000) / 10
+      : 0;
+
   return {
     tenant_id: input.tenantId,
     note: "Insight only — no marketing send (C5 hold).",
     segments,
+    retention: {
+      new_customers: newCustomers,
+      returning_customers: returningCustomers,
+      repeat_rate_pct: repeatRate,
+      vip_customers: segments.vip,
+    },
     customers: profiles,
   };
 }
