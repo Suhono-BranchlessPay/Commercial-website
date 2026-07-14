@@ -34,5 +34,8 @@ router.use("/bridge", bridgeRouter);
 router.use("/dashboard", dashboardRouter);
 router.use("/onboarding", onboardingRouter);
 router.use("/social", socialRouter);
+// Orderly VPS nginx currently proxies only /api/dashboard/* (not /api/social).
+// Dual-mount so the console at orderlyfoods.com can reach the inbox with the same cookies.
+router.use("/dashboard/social", socialRouter);
 
 export default router;
