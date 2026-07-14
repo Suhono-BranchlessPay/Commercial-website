@@ -272,6 +272,12 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       nestedStr(theme?.assets, "favicon") ||
       (typeof theme?.faviconUrl === "string" ? theme.faviconUrl : null);
     applyFavicon(fav);
+    // Blok C1 / D4 — first-touch UTM / ?src= capture for order attribution.
+    if (data?.tenantId) {
+      void import("@/lib/attribution").then(({ captureAttributionFromUrl }) => {
+        captureAttributionFromUrl(data.tenantId);
+      });
+    }
   }, [data]);
 
   const value = useMemo<TenantContextValue>(() => {

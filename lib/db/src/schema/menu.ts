@@ -126,7 +126,7 @@ export const ordersTable = pgTable("orders", {
   bpAnchorStatus: text("bp_anchor_status"),
   chainTxHash: text("chain_tx_hash"),
   bpExplorerUrl: text("bp_explorer_url"),
-  /** web | android | ios | qr | doordash | instagram | tiktok | … */
+  /** web | android | ios | qr | doordash | instagram | tiktok | facebook | google | … */
   channel: text("channel"),
   sourceDetail: jsonb("source_detail")
     .$type<Record<string, unknown>>()

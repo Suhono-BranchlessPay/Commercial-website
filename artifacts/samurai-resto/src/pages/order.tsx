@@ -25,6 +25,7 @@ import {
 } from "@/lib/checkoutStorage";
 import { useTenant } from "@/lib/tenant";
 import { trackAnalyticsEvent } from "@/lib/analytics";
+import { getAttribution } from "@/lib/attribution";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -307,8 +308,8 @@ export default function Order() {
       })),
       specialInstructions: data.specialInstructions || null,
       tipCents,
-      channel: "web" as const,
-      sourceDetail: { surface: "samurai-resto-checkout" },
+      channel: getAttribution(tenantId).channel,
+      sourceDetail: getAttribution(tenantId).source_detail,
     };
     createOrder.mutate({ data: orderInput }, {
       onSuccess: (response) => {
@@ -329,7 +330,7 @@ export default function Order() {
           tenantId,
           eventType: "paid",
           orderId: response.id,
-          meta: { tipCents, channel: "web" },
+          meta: { tipCents, channel: getAttribution(tenantId).channel },
         });
         clearCart();
         setDeliveryQuote(null);

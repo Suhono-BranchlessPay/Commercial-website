@@ -99,6 +99,44 @@ const PLATFORM_SEED_EN: SeedArticle[] = [
       "This assistant only retrieves FAQ articles — it will not invent answers under low confidence.",
     tags: ["escalate", "human", "help", "support", "contact"],
   },
+  {
+    slug: "menu-sync-square",
+    title: "How does Square menu sync work?",
+    body:
+      "Square is the source of truth. After you connect Square (or click Sync now in the console), Orderly pulls " +
+      "categories, items, prices, photos, and availability. Edit the menu in Square — do not re-type it in Orderly. " +
+      "Items 86'd or removed in Square are soft-disabled on web and app (not deleted). If sync fails, an alert is sent " +
+      "when ORDERLY_ALERT_WEBHOOK_URL is configured — check the Square menu sync panel for last success / last error.",
+    tags: ["menu", "sync", "square", "catalog", "86", "availability"],
+  },
+  {
+    slug: "google-order-online",
+    title: "How do I point Google “Order online” to my site?",
+    body:
+      "In Google Business Profile → your location → Order online (or Website) set the URL to your Orderly storefront " +
+      "with UTM tags, e.g. https://samurairesto.com/menu?utm_source=google&utm_medium=gbp_order_online&utm_campaign=samurai. " +
+      "Orders from that link are attributed as channel=google in the console (after the storefront attribution update). " +
+      "This keeps guests on your site instead of DoorDash/Grubhub commission marketplaces.",
+    tags: ["google", "gbp", "maps", "order online", "utm", "seo"],
+  },
+  {
+    slug: "owner-pin",
+    title: "How do I use or change the Owner PIN?",
+    body:
+      "The Owner PIN unlocks kitchen/owner tools on the restaurant site (accept orders, edit availability, refunds when enabled). " +
+      "It is stored as a server secret — never share it in chat or commit it to git. " +
+      "If the PIN may have leaked, rotate it on the VPS (OWNER_PIN) and restart the API. Escalate to Orderly staff for help.",
+    tags: ["owner", "pin", "kitchen", "password", "security"],
+  },
+  {
+    slug: "self-serve-onboarding",
+    title: "How does self-serve onboarding work?",
+    body:
+      "Prospective restaurants use /onboarding: basics → theme → Connect Square (OAuth) → domain → preview → publish. " +
+      "Publish creates a draft tenant and pulls the Square menu automatically. A Master must still flip the tenant to active " +
+      "before the public storefront goes live (DNS/nginx may also be needed). Samurai’s live Square env tokens are never overwritten.",
+    tags: ["onboarding", "self-serve", "oauth", "publish", "draft"],
+  },
 ];
 
 function tokenize(s: string): string[] {
