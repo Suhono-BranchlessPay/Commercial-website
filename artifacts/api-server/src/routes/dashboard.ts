@@ -37,8 +37,14 @@ import {
 import { rebuildSeoTagsForTenant } from "../lib/seoTags";
 import { rebuildSeoPlacesForTenant } from "../lib/seoPlaces";
 import { toTenantContext } from "../lib/tenant";
-import { db, tenantsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import {
+  applyLoyaltyLedgerEntry,
+  getLoyaltyProgram,
+  isLoyaltyEngineEnabled,
+  upsertLoyaltyProgram,
+} from "../lib/loyaltyEngine";
+import { db, loyaltyAccountsTable, tenantsTable } from "@workspace/db";
+import { desc, eq, sql } from "drizzle-orm";
 
 declare global {
   namespace Express {
@@ -612,6 +618,194 @@ router.post(
     } catch (err) {
       req.log?.error({ err }, "Dashboard SEO rebuild failed");
       res.status(500).json({ error: "Failed to rebuild SEO pages" });
+    }
+  },
+);
+
+/**
+ * Loyalty program config (restaurant-owned). Engine still gated by
+ * ORDERLY_LOYALTY_ENABLED on the VPS.
+ */
+router.get(
+  "/loyalty/program",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const user = req.dashboardUser!;
+      const requested =
+        typeof req.query.tenant_id === "string"
+          ? req.query.tenant_id.trim()
+          : null;
+      const scope = resolveScopedTenantId(user, requested || null);
+      if (!scope.ok) {
+        res.status(403).json({ error: scope.error });
+        return;
+      }
+      const tenantId = scope.tenantId;
+      if (!tenantId) {
+        res.status(400).json({ error: "tenant_id required" });
+        return;
+      }
+      const program = await getLoyaltyProgram(tenantId);
+      const [{ count }] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(loyaltyAccountsTable)
+        .where(eq(loyaltyAccountsTable.tenantId, tenantId));
+      res.json({
+        engineEnabled: isLoyaltyEngineEnabled(),
+        program,
+        accounts: count ?? 0,
+      });
+    } catch (err) {
+      req.log?.error({ err }, "Dashboard loyalty program GET failed");
+      res.status(500).json({ error: "Failed to load loyalty program" });
+    }
+  },
+);
+
+router.put(
+  "/loyalty/program",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const user = req.dashboardUser!;
+      const body = (req.body ?? {}) as {
+        tenant_id?: string;
+        enabled?: boolean;
+        points_per_dollar?: number;
+        redemption_rules?: Record<string, unknown>;
+        expiry_days?: number | null;
+        status?: string;
+      };
+      const scope = resolveScopedTenantId(user, body.tenant_id || null);
+      if (!scope.ok) {
+        res.status(403).json({ error: scope.error });
+        return;
+      }
+      const tenantId = scope.tenantId;
+      if (!tenantId) {
+        res.status(400).json({ error: "tenant_id required" });
+        return;
+      }
+      const program = await upsertLoyaltyProgram({
+        tenantId,
+        enabled: body.enabled,
+        pointsPerDollar: body.points_per_dollar,
+        redemptionRules: body.redemption_rules as
+          | {
+              min_redeem_points?: number;
+              points_per_dollar_off?: number;
+              max_percent_of_subtotal?: number;
+            }
+          | undefined,
+        expiryDays: body.expiry_days,
+        status: body.status,
+      });
+      res.json({ ok: true, program, engineEnabled: isLoyaltyEngineEnabled() });
+    } catch (err) {
+      req.log?.error({ err }, "Dashboard loyalty program PUT failed");
+      res.status(500).json({ error: "Failed to update loyalty program" });
+    }
+  },
+);
+
+router.get(
+  "/loyalty/accounts",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const user = req.dashboardUser!;
+      const requested =
+        typeof req.query.tenant_id === "string"
+          ? req.query.tenant_id.trim()
+          : null;
+      const scope = resolveScopedTenantId(user, requested || null);
+      if (!scope.ok) {
+        res.status(403).json({ error: scope.error });
+        return;
+      }
+      const tenantId = scope.tenantId;
+      if (!tenantId) {
+        res.status(400).json({ error: "tenant_id required" });
+        return;
+      }
+      const rows = await db
+        .select()
+        .from(loyaltyAccountsTable)
+        .where(eq(loyaltyAccountsTable.tenantId, tenantId))
+        .orderBy(desc(loyaltyAccountsTable.pointsBalance))
+        .limit(100);
+      res.json({ accounts: rows });
+    } catch (err) {
+      req.log?.error({ err }, "Dashboard loyalty accounts failed");
+      res.status(500).json({ error: "Failed to list loyalty accounts" });
+    }
+  },
+);
+
+/**
+ * Manual ledger entry: adjust | migrate | expire.
+ * migrate = Owner.com import audit trail (does NOT auto-pull Owner).
+ * Master-only for migrate/adjust large corrections.
+ */
+router.post(
+  "/loyalty/ledger",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const user = req.dashboardUser!;
+      const body = (req.body ?? {}) as {
+        tenant_id?: string;
+        customer_id?: string;
+        type?: string;
+        points?: number;
+        reason?: string;
+        external_ref?: string;
+      };
+      const scope = resolveScopedTenantId(user, body.tenant_id || null);
+      if (!scope.ok) {
+        res.status(403).json({ error: scope.error });
+        return;
+      }
+      const tenantId = scope.tenantId;
+      const customerId = String(body.customer_id || "").trim();
+      const type = String(body.type || "").trim();
+      const points = Number(body.points);
+      const reason = String(body.reason || "").trim();
+      if (!tenantId || !customerId || !reason || !Number.isFinite(points)) {
+        res.status(400).json({
+          error: "tenant_id, customer_id, type, points, reason required",
+        });
+        return;
+      }
+      if (!["adjust", "migrate", "expire"].includes(type)) {
+        res.status(400).json({ error: "type must be adjust|migrate|expire" });
+        return;
+      }
+      if (type === "migrate" && user.role !== "master") {
+        res.status(403).json({ error: "Master role required for migrate" });
+        return;
+      }
+      const slugRow = await db
+        .select({ slug: tenantsTable.slug })
+        .from(tenantsTable)
+        .where(eq(tenantsTable.id, tenantId))
+        .limit(1);
+      const result = await applyLoyaltyLedgerEntry({
+        tenantId,
+        customerId,
+        type: type as "adjust" | "migrate" | "expire",
+        points,
+        reason,
+        externalRef: body.external_ref,
+        tenantSlug: slugRow[0]?.slug,
+      });
+      res.json(result);
+    } catch (err) {
+      req.log?.error({ err }, "Dashboard loyalty ledger failed");
+      res.status(500).json({
+        error: err instanceof Error ? err.message : "Ledger entry failed",
+      });
     }
   },
 );

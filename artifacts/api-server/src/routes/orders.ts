@@ -474,6 +474,26 @@ router.post("/orders", async (req, res): Promise<void> => {
       req.log.error({ err, orderId }, "Customer aggregate update failed");
     }
 
+    // Loyalty earn (gated: ORDERLY_LOYALTY_ENABLED + program active). Best-effort.
+    try {
+      const { earnLoyaltyForPaidOrder } = await import("../lib/loyaltyEngine");
+      const loyaltyResult = await earnLoyaltyForPaidOrder({
+        tenantId,
+        customerId: customerRecord.customerId,
+        orderId,
+        subtotalCents: money.subtotalCents,
+        tenantSlug: tenant?.slug,
+      });
+      if (loyaltyResult.ok && loyaltyResult.points) {
+        req.log.info(
+          { orderId, points: loyaltyResult.points },
+          "Loyalty points earned",
+        );
+      }
+    } catch (err) {
+      req.log.warn({ err, orderId }, "Loyalty earn skipped/failed");
+    }
+
     let doordashTrackingUrl: string | null = null;
     let doordashStatus: string | null = null;
     let estimatedDropoffTime: string | null = null;

@@ -498,3 +498,83 @@ export async function fetchAnchorProof(input: {
 
   return { ok: false, error: lastError };
 }
+
+export function isBranchlessPayConfigured(tenantSlug = "samurai"): boolean {
+  return Boolean(licenseKey(tenantSlug)?.trim());
+}
+
+/**
+ * Loyalty ledger anchor — restaurant liability event, not a card charge.
+ * Best-effort; loyalty writes succeed even if this fails.
+ */
+export async function createLoyaltyAnchor(input: {
+  tenantId: string;
+  tenantSlug?: string;
+  txnId: string;
+  type: string;
+  points: number;
+  orderId?: string;
+  customerId: string;
+}): Promise<AnchorPaidOrderResult & { explorerUrl?: string | null }> {
+  const slug = input.tenantSlug || input.tenantId;
+  const key = licenseKey(slug)?.trim();
+  if (!key) {
+    return { ok: false, error: "BRANCHLESSPAY_LICENSE_KEY not configured" };
+  }
+
+  const payload: Record<string, unknown> = {
+    event_type: "orderly_loyalty_ledger",
+    reference_id: input.txnId,
+    amount: 0,
+    currency: "USD",
+    merchant_id:
+      process.env.BRANCHLESSPAY_MERCHANT_ID?.trim() ||
+      tenantSecret(slug, "BRANCHLESSPAY_MERCHANT_ID") ||
+      "orderly",
+    timestamp: new Date().toISOString(),
+    ts: new Date().toISOString(),
+    metadata: {
+      erp: "orderly",
+      tenant_id: slug,
+      event: "loyalty",
+      loyalty_type: input.type,
+      points: input.points,
+      order_id: input.orderId,
+      customer_id: input.customerId,
+    },
+  };
+  payload.content_hash = legacyContentHash(payload);
+
+  try {
+    const response = await fetch(BP_ANCHOR_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    const text = await response.text();
+    if (response.status !== 200 && response.status !== 202) {
+      return { ok: false, error: `BP loyalty anchor ${response.status}: ${text}` };
+    }
+    const data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+    return {
+      ok: data.ok !== false,
+      anchorId: typeof data.anchor_id === "string" ? data.anchor_id : undefined,
+      contentHash:
+        typeof data.content_hash === "string"
+          ? data.content_hash
+          : String(payload.content_hash),
+      txHash: typeof data.tx_hash === "string" ? data.tx_hash : null,
+      explorerUrl:
+        typeof data.explorer_url === "string" ? data.explorer_url : null,
+      status: typeof data.status === "string" ? data.status : "queued",
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "BP loyalty anchor failed",
+    };
+  }
+}

@@ -14,3 +14,4 @@ export * from "./socialInbox";
 export * from "./support";
 export * from "./metaCapi";
 export * from "./seo";
+export * from "./loyalty";
