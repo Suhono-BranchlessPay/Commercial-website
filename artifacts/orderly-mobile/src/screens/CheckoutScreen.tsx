@@ -21,6 +21,7 @@ import {
   startCardPaymentFlow,
 } from "../payments";
 import { pickupAddressLine, tenant } from "../tenant";
+import { getMobileAttribution } from "../attribution";
 import type { RootStackParamList } from "../navigation";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Checkout">;
@@ -113,6 +114,7 @@ export function CheckoutScreen({ navigation }: Props) {
             return { success: false, errorMessage: "Square returned an empty card token." };
           }
           try {
+            const attr = await getMobileAttribution();
             const order = await api.createOrder({
               firstName: firstName.trim(),
               lastName: lastName.trim() || null,
@@ -129,8 +131,11 @@ export function CheckoutScreen({ navigation }: Props) {
               squarePaymentSourceId: sourceId,
               doordashExternalDeliveryId: null,
               tipCents,
-              channel: "android",
-              sourceDetail: { surface: "orderly-mobile" },
+              channel: attr?.channel || "android",
+              sourceDetail: {
+                surface: "orderly-mobile",
+                ...(attr?.source_detail || {}),
+              },
             });
 
             await AsyncStorage.setItem(
