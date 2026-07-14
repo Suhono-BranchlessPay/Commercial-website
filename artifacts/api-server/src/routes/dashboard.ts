@@ -34,6 +34,9 @@ import {
   getTenantSlugById,
   syncSquareMenuForTenant,
 } from "../lib/squareMenuSync";
+import { rebuildSeoTagsForTenant } from "../lib/seoTags";
+import { rebuildSeoPlacesForTenant } from "../lib/seoPlaces";
+import { toTenantContext } from "../lib/tenant";
 import { db, tenantsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
@@ -567,6 +570,48 @@ router.post(
     } catch (err) {
       req.log?.error({ err }, "Dashboard tenant activate failed");
       res.status(500).json({ error: "Failed to activate tenant" });
+    }
+  },
+);
+
+/**
+ * Rebuild programmatic SEO tag + place pages for a tenant.
+ */
+router.post(
+  "/seo/rebuild",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const user = req.dashboardUser!;
+      const requested =
+        typeof req.body?.tenant_id === "string" ? req.body.tenant_id.trim() : null;
+      const scope = resolveScopedTenantId(user, requested || null);
+      if (!scope.ok) {
+        res.status(403).json({ error: scope.error });
+        return;
+      }
+      const tenantId = scope.tenantId;
+      if (!tenantId) {
+        res.status(400).json({ error: "tenant_id is required" });
+        return;
+      }
+      const rows = await db
+        .select()
+        .from(tenantsTable)
+        .where(eq(tenantsTable.id, tenantId))
+        .limit(1);
+      const row = rows[0];
+      if (!row) {
+        res.status(404).json({ error: "Tenant not found" });
+        return;
+      }
+      const ctx = toTenantContext(row);
+      const tags = await rebuildSeoTagsForTenant(ctx);
+      const places = await rebuildSeoPlacesForTenant(ctx);
+      res.json({ ok: true, tenantId, tags, places });
+    } catch (err) {
+      req.log?.error({ err }, "Dashboard SEO rebuild failed");
+      res.status(500).json({ error: "Failed to rebuild SEO pages" });
     }
   },
 );

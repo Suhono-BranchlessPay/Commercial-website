@@ -12,6 +12,8 @@ import Order from "@/pages/order";
 import Catering from "@/pages/catering";
 import Owner from "@/pages/owner";
 import Account from "@/pages/account";
+import TagPage from "@/pages/tag";
+import PlacePage from "@/pages/place";
 
 const queryClient = new QueryClient();
 
@@ -25,6 +27,8 @@ function Router() {
         <Route path="/catering" component={Catering} />
         <Route path="/owner" component={Owner} />
         <Route path="/account" component={Account} />
+        <Route path="/tags/:slug" component={TagPage} />
+        <Route path="/places/:slug" component={PlacePage} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

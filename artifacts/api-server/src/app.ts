@@ -14,6 +14,7 @@ import {
 } from "./middleware/spaHtml";
 import { requireOrderlyDashboardHostPage } from "./lib/dashboardHost";
 import qrRouter from "./routes/qr";
+import { robotsTxtHandler, sitemapXmlHandler } from "./routes/seoFiles";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DASHBOARD_ROOT = path.resolve(__dirname, "../public/dashboard");
@@ -61,6 +62,10 @@ app.use(express.urlencoded({ extended: true }));
 
 // Dynamic flyer QR — must be before SPA catch-all.
 app.use(qrRouter);
+
+// Per-tenant SEO files (must beat static robots.txt in storefront dist).
+app.get("/robots.txt", robotsTxtHandler);
+app.get("/sitemap.xml", sitemapXmlHandler);
 
 app.use("/api/uploads", express.static(UPLOADS_ROOT));
 app.use("/api", tenantMiddleware, router);

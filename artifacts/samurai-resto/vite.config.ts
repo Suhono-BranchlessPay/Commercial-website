@@ -50,8 +50,15 @@ export default defineConfig({
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
       "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
+      // Single react-query instance (api-client-react can resolve a second copy).
+      "@tanstack/react-query": path.resolve(
+        import.meta.dirname,
+        "node_modules",
+        "@tanstack",
+        "react-query",
+      ),
     },
-    dedupe: ["react", "react-dom"],
+    dedupe: ["react", "react-dom", "@tanstack/react-query"],
   },
   root: path.resolve(import.meta.dirname),
   build: {

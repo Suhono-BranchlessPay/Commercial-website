@@ -13,3 +13,4 @@ export * from "./squareOauthConnections";
 export * from "./socialInbox";
 export * from "./support";
 export * from "./metaCapi";
+export * from "./seo";

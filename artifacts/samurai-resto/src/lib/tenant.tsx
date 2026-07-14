@@ -69,6 +69,7 @@ export type TenantPublicConfig = {
   logoUrl?: string | null;
   faviconUrl?: string | null;
   hours?: { weekly?: TenantHoursDay[] } | null;
+  showPoweredBy?: boolean;
   googleMapsApiKey: string | null;
   places: {
     country: string;
@@ -109,6 +110,7 @@ type TenantContextValue = {
   weeklyHours: TenantHoursDay[];
   metaTitle: string;
   storefront: StorefrontConfig;
+  showPoweredBy: boolean;
 };
 
 const TenantContext = createContext<TenantContextValue | null>(null);
@@ -363,6 +365,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
           brochures: SAMURAI_BROCHURES,
         },
       ),
+      showPoweredBy: data?.showPoweredBy !== false,
     };
   }, [data, isLoading]);
 

@@ -29,6 +29,8 @@ export type TenantContext = {
   serviceFee: Record<string, unknown>;
   processingFeePaidBy: string;
   status: string;
+  /** Footer "Powered by Orderly" — default true. */
+  showPoweredBy: boolean;
   /** Formatted pickup line for DoorDash / Square notes. */
   pickupAddressFormatted: string;
 };
@@ -95,6 +97,8 @@ export function toTenantContext(row: Tenant): TenantContext {
     serviceFee: (row.serviceFee as Record<string, unknown>) ?? {},
     processingFeePaidBy: row.processingFeePaidBy,
     status: row.status,
+    showPoweredBy:
+      (row as { showPoweredBy?: boolean | null }).showPoweredBy !== false,
     pickupAddressFormatted: formatPickupAddress(row),
   };
 }
@@ -138,6 +142,7 @@ export function envFallbackTenant(): TenantContext {
     serviceFee: {},
     processingFeePaidBy: "restaurant",
     status: "active",
+    showPoweredBy: true,
     pickupAddressFormatted: `${address}, ${city}, ${state} ${postcode}`,
   };
 }
