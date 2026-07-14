@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type RequestHandler } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import path from "path";
@@ -19,6 +19,7 @@ import { robotsTxtHandler, sitemapXmlHandler } from "./routes/seoFiles";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DASHBOARD_ROOT = path.resolve(__dirname, "../public/dashboard");
 const ONBOARDING_ROOT = path.resolve(__dirname, "../public/onboarding");
+const LEGAL_ROOT = path.resolve(__dirname, "../public/legal");
 
 const app: Express = express();
 
@@ -105,6 +106,22 @@ app.get(["/onboarding", "/onboarding/"], (_req, res) => {
   res.sendFile(path.join(ONBOARDING_ROOT, "index.html"));
 });
 app.use("/onboarding", express.static(ONBOARDING_ROOT, { index: false }));
+
+// Public legal pages (Meta App Review + App Store + storefront footer).
+// Must be registered before the SPA catch-all so crawlers get real HTML.
+const sendLegal =
+  (file: string): RequestHandler =>
+  (_req, res) => {
+    res.setHeader("Cache-Control", "public, max-age=300");
+    res.sendFile(path.join(LEGAL_ROOT, file));
+  };
+app.get(["/privacy", "/privacy/"], sendLegal("privacy.html"));
+app.get(["/terms", "/terms/"], sendLegal("terms.html"));
+app.get(
+  ["/data-deletion", "/data-deletion/", "/data_deletion", "/data_deletion/"],
+  sendLegal("data-deletion.html"),
+);
+app.use("/legal", express.static(LEGAL_ROOT, { index: false }));
 
 // White-label SPA: static assets + Host-based tenant SEO injection into index.html.
 // Requires STOREFRONT_DIST (path to Vite dist/public). Nginx should proxy document
