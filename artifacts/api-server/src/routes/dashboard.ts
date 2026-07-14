@@ -43,8 +43,23 @@ import {
   isLoyaltyEngineEnabled,
   upsertLoyaltyProgram,
 } from "../lib/loyaltyEngine";
+import {
+  approveSocialPost,
+  createSocialPostDraft,
+  findMenuItemByName,
+  getSocialPostingConfig,
+  isSocialPostingEngineEnabled,
+  listSocialPostCandidates,
+  listSocialPosts,
+  markSocialPostPosted,
+  refreshSocialPostMetrics,
+  skipSocialPost,
+  updateSocialPostCaption,
+  upsertSocialPostingConfig,
+} from "../lib/socialPosting";
 import { db, loyaltyAccountsTable, tenantsTable } from "@workspace/db";
 import { desc, eq, sql } from "drizzle-orm";
+import type { SocialPostAngle } from "@workspace/db";
 
 declare global {
   namespace Express {
@@ -805,6 +820,386 @@ router.post(
       req.log?.error({ err }, "Dashboard loyalty ledger failed");
       res.status(500).json({
         error: err instanceof Error ? err.message : "Ledger entry failed",
+      });
+    }
+  },
+);
+
+/**
+ * AI Social Posting — Stage 1 (manual-assisted).
+ * Draft → human approve → copy caption/link → mark posted. NO Meta Graph publish.
+ */
+router.get(
+  "/social-posts/config",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const user = req.dashboardUser!;
+      const requested =
+        typeof req.query.tenant_id === "string"
+          ? req.query.tenant_id.trim()
+          : null;
+      const scope = resolveScopedTenantId(user, requested || null);
+      if (!scope.ok) {
+        res.status(403).json({ error: scope.error });
+        return;
+      }
+      const tenantId = scope.tenantId;
+      if (!tenantId) {
+        res.status(400).json({ error: "tenant_id required" });
+        return;
+      }
+      const config = await getSocialPostingConfig(tenantId);
+      res.json({
+        engineEnabled: isSocialPostingEngineEnabled(),
+        stage: 1,
+        autoPost: false,
+        config,
+      });
+    } catch (err) {
+      req.log?.error({ err }, "social-posts config GET failed");
+      res.status(500).json({ error: "Failed to load config" });
+    }
+  },
+);
+
+router.put(
+  "/social-posts/config",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const user = req.dashboardUser!;
+      const body = (req.body ?? {}) as {
+        tenant_id?: string;
+        enabled?: boolean;
+        frequency?: string;
+        post_time?: string | null;
+        platforms?: string[];
+        brand_voice?: string | null;
+        language?: string;
+        min_days_between_repeat?: number;
+      };
+      const scope = resolveScopedTenantId(user, body.tenant_id || null);
+      if (!scope.ok) {
+        res.status(403).json({ error: scope.error });
+        return;
+      }
+      const tenantId = scope.tenantId;
+      if (!tenantId) {
+        res.status(400).json({ error: "tenant_id required" });
+        return;
+      }
+      const config = await upsertSocialPostingConfig({
+        tenantId,
+        enabled: body.enabled,
+        frequency: body.frequency,
+        postTime: body.post_time,
+        platforms: body.platforms,
+        brandVoice: body.brand_voice,
+        language: body.language,
+        minDaysBetweenRepeat: body.min_days_between_repeat,
+      });
+      res.json({
+        ok: true,
+        config,
+        engineEnabled: isSocialPostingEngineEnabled(),
+        note: "Stage 1: require_approval forced true; no auto-post.",
+      });
+    } catch (err) {
+      req.log?.error({ err }, "social-posts config PUT failed");
+      res.status(500).json({ error: "Failed to save config" });
+    }
+  },
+);
+
+router.get(
+  "/social-posts/candidates",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const user = req.dashboardUser!;
+      const requested =
+        typeof req.query.tenant_id === "string"
+          ? req.query.tenant_id.trim()
+          : null;
+      const scope = resolveScopedTenantId(user, requested || null);
+      if (!scope.ok) {
+        res.status(403).json({ error: scope.error });
+        return;
+      }
+      const tenantId = scope.tenantId;
+      if (!tenantId) {
+        res.status(400).json({ error: "tenant_id required" });
+        return;
+      }
+      const candidates = await listSocialPostCandidates({ tenantId });
+      res.json({ candidates });
+    } catch (err) {
+      req.log?.error({ err }, "social-posts candidates failed");
+      res.status(500).json({ error: "Failed to list candidates" });
+    }
+  },
+);
+
+router.get(
+  "/social-posts",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const user = req.dashboardUser!;
+      const requested =
+        typeof req.query.tenant_id === "string"
+          ? req.query.tenant_id.trim()
+          : null;
+      const status =
+        typeof req.query.status === "string" ? req.query.status.trim() : undefined;
+      const scope = resolveScopedTenantId(user, requested || null);
+      if (!scope.ok) {
+        res.status(403).json({ error: scope.error });
+        return;
+      }
+      const tenantId = scope.tenantId;
+      if (!tenantId) {
+        res.status(400).json({ error: "tenant_id required" });
+        return;
+      }
+      const posts = await listSocialPosts({ tenantId, status });
+      res.json({ posts });
+    } catch (err) {
+      req.log?.error({ err }, "social-posts list failed");
+      res.status(500).json({ error: "Failed to list posts" });
+    }
+  },
+);
+
+router.post(
+  "/social-posts/draft",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const user = req.dashboardUser!;
+      const body = (req.body ?? {}) as {
+        tenant_id?: string;
+        menu_item_id?: string;
+        item_name?: string;
+        platform?: string;
+        angle?: string;
+        src_tag?: string;
+      };
+      const scope = resolveScopedTenantId(user, body.tenant_id || null);
+      if (!scope.ok) {
+        res.status(403).json({ error: scope.error });
+        return;
+      }
+      const tenantId = scope.tenantId;
+      if (!tenantId) {
+        res.status(400).json({ error: "tenant_id required" });
+        return;
+      }
+      let menuItemId = String(body.menu_item_id || "").trim();
+      if (!menuItemId && body.item_name) {
+        const found = await findMenuItemByName(tenantId, body.item_name);
+        if (!found) {
+          res.status(404).json({
+            error: `No menu item matching "${body.item_name}" (try "Steak Bento")`,
+          });
+          return;
+        }
+        menuItemId = found.id;
+      }
+      if (!menuItemId) {
+        res.status(400).json({ error: "menu_item_id or item_name required" });
+        return;
+      }
+      const post = await createSocialPostDraft({
+        tenantId,
+        menuItemId,
+        platform: body.platform,
+        angle: body.angle as SocialPostAngle | undefined,
+        srcTagOverride: body.src_tag,
+      });
+      const fullPost =
+        `${post.draftCaption}\n\n${post.cta}\n\n${post.hashtags}`.trim();
+      res.json({
+        ok: true,
+        post,
+        fullPost,
+        copyHint:
+          "Approve → copy fullPost into Facebook → Mark posted. Do not auto-publish.",
+      });
+    } catch (err) {
+      req.log?.error({ err }, "social-posts draft failed");
+      res.status(400).json({
+        error: err instanceof Error ? err.message : "Draft failed",
+      });
+    }
+  },
+);
+
+router.get(
+  "/social-posts/performance",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const user = req.dashboardUser!;
+      const requested =
+        typeof req.query.tenant_id === "string"
+          ? req.query.tenant_id.trim()
+          : null;
+      const scope = resolveScopedTenantId(user, requested || null);
+      if (!scope.ok) {
+        res.status(403).json({ error: scope.error });
+        return;
+      }
+      const tenantId = scope.tenantId;
+      if (!tenantId) {
+        res.status(400).json({ error: "tenant_id required" });
+        return;
+      }
+      const rows = await refreshSocialPostMetrics(tenantId);
+      res.json({
+        posts: rows,
+        note: "Real clicks (qr_scans) + paid orders by source_detail.src. Empty = zero.",
+      });
+    } catch (err) {
+      req.log?.error({ err }, "social-posts performance failed");
+      res.status(500).json({ error: "Failed to load performance" });
+    }
+  },
+);
+
+router.patch(
+  "/social-posts/:id",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const user = req.dashboardUser!;
+      const body = (req.body ?? {}) as {
+        tenant_id?: string;
+        draft_caption?: string;
+        hashtags?: string;
+        cta?: string;
+      };
+      const scope = resolveScopedTenantId(user, body.tenant_id || null);
+      if (!scope.ok) {
+        res.status(403).json({ error: scope.error });
+        return;
+      }
+      const tenantId = scope.tenantId;
+      if (!tenantId) {
+        res.status(400).json({ error: "tenant_id required" });
+        return;
+      }
+      const post = await updateSocialPostCaption({
+        tenantId,
+        postId: String(req.params.id),
+        draftCaption: body.draft_caption,
+        hashtags: body.hashtags,
+        cta: body.cta,
+      });
+      res.json({ ok: true, post });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : "Update failed",
+      });
+    }
+  },
+);
+
+router.post(
+  "/social-posts/:id/approve",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const user = req.dashboardUser!;
+      const body = (req.body ?? {}) as { tenant_id?: string };
+      const scope = resolveScopedTenantId(user, body.tenant_id || null);
+      if (!scope.ok) {
+        res.status(403).json({ error: scope.error });
+        return;
+      }
+      const tenantId = scope.tenantId;
+      if (!tenantId) {
+        res.status(400).json({ error: "tenant_id required" });
+        return;
+      }
+      const post = await approveSocialPost({
+        tenantId,
+        postId: String(req.params.id),
+        approvedBy: user.email || user.id,
+      });
+      const fullPost =
+        `${post.draftCaption}\n\n${post.cta}\n\n${post.hashtags}`.trim();
+      res.json({ ok: true, post, fullPost });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : "Approve failed",
+      });
+    }
+  },
+);
+
+router.post(
+  "/social-posts/:id/skip",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const user = req.dashboardUser!;
+      const body = (req.body ?? {}) as { tenant_id?: string; reason?: string };
+      const scope = resolveScopedTenantId(user, body.tenant_id || null);
+      if (!scope.ok) {
+        res.status(403).json({ error: scope.error });
+        return;
+      }
+      const tenantId = scope.tenantId;
+      if (!tenantId) {
+        res.status(400).json({ error: "tenant_id required" });
+        return;
+      }
+      const post = await skipSocialPost({
+        tenantId,
+        postId: String(req.params.id),
+        reason: body.reason,
+      });
+      res.json({ ok: true, post });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : "Skip failed",
+      });
+    }
+  },
+);
+
+router.post(
+  "/social-posts/:id/mark-posted",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const user = req.dashboardUser!;
+      const body = (req.body ?? {}) as { tenant_id?: string };
+      const scope = resolveScopedTenantId(user, body.tenant_id || null);
+      if (!scope.ok) {
+        res.status(403).json({ error: scope.error });
+        return;
+      }
+      const tenantId = scope.tenantId;
+      if (!tenantId) {
+        res.status(400).json({ error: "tenant_id required" });
+        return;
+      }
+      const post = await markSocialPostPosted({
+        tenantId,
+        postId: String(req.params.id),
+        postedBy: user.email || user.id,
+      });
+      res.json({
+        ok: true,
+        post,
+        note: "Recorded as posted. Measure clicks/orders via src for 48h.",
+      });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : "Mark posted failed",
       });
     }
   },
