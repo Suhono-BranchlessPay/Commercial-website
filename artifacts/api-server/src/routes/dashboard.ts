@@ -34,6 +34,8 @@ import {
   getTenantSlugById,
   syncSquareMenuForTenant,
 } from "../lib/squareMenuSync";
+import { db, tenantsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 
 declare global {
   namespace Express {
@@ -504,6 +506,67 @@ router.post(
     } catch (err) {
       req.log?.error({ err }, "Dashboard menu sync trigger failed");
       res.status(500).json({ error: "Failed to sync menu" });
+    }
+  },
+);
+
+/**
+ * Blok B — Master-only: promote a draft onboarding tenant to active.
+ * Does NOT configure DNS/nginx — ops must point the domain first.
+ * Never touches Samurai env Square tokens.
+ */
+router.post(
+  "/tenants/:id/activate",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const user = req.dashboardUser!;
+      if (user.role !== "master") {
+        res.status(403).json({ error: "Master role required to activate tenants" });
+        return;
+      }
+      const id = String(req.params.id || "").trim();
+      if (!id) {
+        res.status(400).json({ error: "tenant id required" });
+        return;
+      }
+      const rows = await db
+        .select({
+          id: tenantsTable.id,
+          slug: tenantsTable.slug,
+          status: tenantsTable.status,
+          domain: tenantsTable.domain,
+        })
+        .from(tenantsTable)
+        .where(eq(tenantsTable.id, id))
+        .limit(1);
+      const row = rows[0];
+      if (!row) {
+        res.status(404).json({ error: "Tenant not found" });
+        return;
+      }
+      if (row.status === "active") {
+        res.json({
+          ok: true,
+          already_active: true,
+          tenant: row,
+          note: "Already active. Ensure DNS/nginx points to this API for the domain.",
+        });
+        return;
+      }
+      await db
+        .update(tenantsTable)
+        .set({ status: "active" })
+        .where(eq(tenantsTable.id, id));
+      res.json({
+        ok: true,
+        tenant: { ...row, status: "active" },
+        note:
+          "Tenant marked active. Storefront resolves only active tenants — configure DNS/nginx for the domain if needed, then Sync menu from Square.",
+      });
+    } catch (err) {
+      req.log?.error({ err }, "Dashboard tenant activate failed");
+      res.status(500).json({ error: "Failed to activate tenant" });
     }
   },
 );

@@ -9,6 +9,7 @@ export const ORDER_CHANNELS = [
   "instagram",
   "tiktok",
   "facebook",
+  "google",
   "other",
 ] as const;
 
