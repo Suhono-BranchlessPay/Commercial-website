@@ -47,6 +47,15 @@ app.use(
   }),
 );
 app.use(cookieParser());
+// Blok A — Square webhook signature verification needs the exact raw request
+// bytes (HMAC-SHA256 over notification URL + raw body). Capture them here,
+// scoped to this one path only, BEFORE the global JSON parser runs — Express
+// body-parsers skip re-parsing once `req.body` is already set, so this does
+// not affect any other route (doordash/branchlesspay webhooks, orders, etc).
+app.use(
+  "/api/webhooks/square",
+  express.raw({ type: "*/*", limit: "2mb" }),
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

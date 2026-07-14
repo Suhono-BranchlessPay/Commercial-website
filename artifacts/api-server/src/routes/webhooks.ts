@@ -1,6 +1,7 @@
+import { createHmac, timingSafeEqual } from "crypto";
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { ordersTable } from "@workspace/db";
+import { ordersTable, squareOauthConnectionsTable, tenantsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import {
   mapDoordashEventToOrderStatus,
@@ -8,6 +9,7 @@ import {
 import {
   isSquareConfigured,
   syncSquareOrderFromOwnerStatus,
+  getSquareCredsForTenantSlug,
 } from "../integrations/square";
 import {
   applyAnchorProof,
@@ -17,6 +19,8 @@ import {
   noteAnchorWebhookFailure,
   noteAnchorWebhookSuccess,
 } from "../lib/anchorAlerts";
+import { getTenantSlugById, syncSquareMenuForTenant } from "../lib/squareMenuSync";
+import { logger } from "../lib/logger";
 
 const router = Router();
 
@@ -184,6 +188,139 @@ router.post("/webhooks/branchlesspay", async (req, res): Promise<void> => {
 
 router.post("/webhooks/anchor-callback", async (req, res): Promise<void> => {
   await handleAnchorCallback(req, res);
+});
+
+/**
+ * Blok A — Square catalog/inventory webhook. SQUARE remains the source of
+ * truth; this endpoint only ever triggers a *read* sync (syncSquareMenuForTenant)
+ * into Orderly's menu tables — it never writes back to Square and never
+ * touches order/payment paths. Idempotent (upserts) — safe for Square's retries.
+ *
+ * Signature verification (HMAC-SHA256 of "<notification_url><raw_body>",
+ * base64) only runs when SQUARE_WEBHOOK_SIGNATURE_KEY is set — see
+ * app.ts for the raw-body capture this depends on and
+ * docs/BLOK_A_SQUARE_MENU_SYNC.md for setup.
+ */
+function verifySquareWebhookSignature(
+  req: import("express").Request,
+  rawBody: Buffer,
+  signatureKey: string,
+): boolean {
+  const provided = req.headers["x-square-hmacsha256-signature"];
+  if (typeof provided !== "string" || !provided) return false;
+
+  const notificationUrl =
+    process.env.SQUARE_WEBHOOK_NOTIFICATION_URL?.trim() ||
+    `${req.protocol}://${req.get("host") ?? ""}${req.originalUrl}`;
+
+  const expected = createHmac("sha256", signatureKey)
+    .update(notificationUrl + rawBody.toString("utf8"))
+    .digest("base64");
+
+  const expectedBuf = Buffer.from(expected, "utf8");
+  const providedBuf = Buffer.from(provided, "utf8");
+  if (expectedBuf.length !== providedBuf.length) return false;
+  return timingSafeEqual(expectedBuf, providedBuf);
+}
+
+function extractLocationIdFromSquarePayload(
+  payload: Record<string, unknown>,
+): string | undefined {
+  const data = payload.data as Record<string, unknown> | undefined;
+  const object = data?.object as Record<string, unknown> | undefined;
+  if (typeof object?.location_id === "string") return object.location_id;
+  const counts = object?.inventory_counts as Array<Record<string, unknown>> | undefined;
+  const fromCounts = counts?.find((c) => typeof c.location_id === "string")?.location_id;
+  return typeof fromCounts === "string" ? fromCounts : undefined;
+}
+
+async function resolveTenantForSquareWebhook(
+  payload: Record<string, unknown>,
+): Promise<{ tenantId: string; slug: string } | null> {
+  const merchantId = typeof payload.merchant_id === "string" ? payload.merchant_id : undefined;
+
+  if (merchantId) {
+    const rows = await db
+      .select()
+      .from(squareOauthConnectionsTable)
+      .where(
+        eq(squareOauthConnectionsTable.merchantId, merchantId),
+      );
+    const withTenant = rows.find((r) => Boolean(r.tenantId));
+    if (withTenant?.tenantId) {
+      const slug = await getTenantSlugById(withTenant.tenantId);
+      if (slug) return { tenantId: withTenant.tenantId, slug };
+    }
+  }
+
+  // Fallback: match by location_id against every tenant's resolved Square
+  // creds — this is how env-token tenants (e.g. Samurai, no merchant_id on
+  // file) get matched, since inventory.count.updated carries a location_id.
+  const locationId = extractLocationIdFromSquarePayload(payload);
+  if (locationId) {
+    const tenants = await db
+      .select({ id: tenantsTable.id, slug: tenantsTable.slug })
+      .from(tenantsTable);
+    for (const t of tenants) {
+      try {
+        const creds = await getSquareCredsForTenantSlug(t.slug);
+        if (creds?.locationId === locationId) return { tenantId: t.id, slug: t.slug };
+      } catch {
+        // best-effort — keep scanning other tenants
+      }
+    }
+  }
+
+  return null;
+}
+
+router.post("/webhooks/square", async (req, res): Promise<void> => {
+  const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from([]);
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = rawBody.length ? (JSON.parse(rawBody.toString("utf8")) as Record<string, unknown>) : {};
+  } catch {
+    res.status(400).json({ error: "Invalid JSON body" });
+    return;
+  }
+
+  const signatureKey = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY?.trim();
+  if (signatureKey) {
+    const valid = verifySquareWebhookSignature(req, rawBody, signatureKey);
+    if (!valid) {
+      logger.warn("Square webhook: signature verification failed");
+      res.status(401).json({ error: "Invalid signature" });
+      return;
+    }
+  }
+
+  const eventType = typeof payload.type === "string" ? payload.type : "";
+  const relevant =
+    eventType.startsWith("catalog.") || eventType.startsWith("inventory.");
+
+  // Always ack 200 quickly (Square retries aggressively on non-2xx) — the
+  // actual catalog pull happens fire-and-forget below.
+  res.status(200).json({ ok: true, relevant });
+
+  if (!relevant) return;
+
+  try {
+    const target = await resolveTenantForSquareWebhook(payload);
+    if (!target) {
+      logger.warn({ eventType }, "Square webhook: no matching tenant for this event");
+      return;
+    }
+    void syncSquareMenuForTenant({
+      tenantId: target.tenantId,
+      slug: target.slug,
+      reason: `square_webhook:${eventType}`,
+    }).catch((err) => {
+      logger.error({ err, tenantId: target.tenantId }, "Square webhook-triggered sync failed");
+    });
+  } catch (err) {
+    logger.error({ err, eventType }, "Square webhook handling failed");
+  }
 });
 
 export default router;
