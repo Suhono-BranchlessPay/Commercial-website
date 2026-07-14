@@ -10,7 +10,11 @@
 3. Request products:
    - Messenger API
    - Instagram Messaging API (via Facebook Page / IG Professional)
-4. Prepare privacy policy + terms URLs on `orderlyfoods.com`.
+4. Privacy / terms / data-deletion URLs (live after legal-pages deploy):
+   - `https://samurairesto.com/privacy`
+   - `https://samurairesto.com/terms`
+   - `https://samurairesto.com/data-deletion`  
+   (Same paths work on other restaurant hosts on this VPS. Prefer these for Meta App settings until `orderlyfoods.com` marketing host is wired the same way.)
 5. Prepare use-case writeup: multi-tenant restaurant replies, human-in-the-loop for complaints.
 6. Submit App Review when test Page + webhook receiver exist.
 7. Track approval ETA — **long lead time**; do not block C2 draft engine on this.

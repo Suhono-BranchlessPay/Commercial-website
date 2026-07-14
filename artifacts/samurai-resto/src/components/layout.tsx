@@ -298,9 +298,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 Directions
               </a>
             </div>
-            <p className="text-xs text-muted-foreground">
-              © {new Date().getFullYear()} {brandName}
-            </p>
+            <div className="text-xs text-muted-foreground space-y-2">
+              <p>© {new Date().getFullYear()} {brandName}</p>
+              <p className="flex flex-wrap gap-x-3 gap-y-1 justify-center md:justify-end">
+                <a href="/privacy" className="hover:text-primary underline underline-offset-2">Privacy</a>
+                <a href="/terms" className="hover:text-primary underline underline-offset-2">Terms</a>
+                <a href="/data-deletion" className="hover:text-primary underline underline-offset-2">Data deletion</a>
+              </p>
+            </div>
           </div>
           {showPoweredBy ? (
             <p className="container mx-auto px-4 mt-6 text-center text-[11px] text-muted-foreground/70">
@@ -375,6 +380,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 </p>
                 <p className="text-xs text-accent-foreground/30 mt-1">
                   {cityLine} · All rights reserved
+                </p>
+                <p className="text-xs text-accent-foreground/45 mt-3 flex flex-wrap gap-x-3 gap-y-1 justify-center md:justify-start">
+                  <a href="/privacy" className="underline underline-offset-2 hover:text-primary">Privacy</a>
+                  <a href="/terms" className="underline underline-offset-2 hover:text-primary">Terms</a>
+                  <a href="/data-deletion" className="underline underline-offset-2 hover:text-primary">Data deletion</a>
                 </p>
                 {showPoweredBy ? (
                   <p className="text-[11px] text-accent-foreground/35 mt-3">
