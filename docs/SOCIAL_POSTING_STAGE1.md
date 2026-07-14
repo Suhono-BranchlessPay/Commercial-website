@@ -74,7 +74,8 @@ psql "$DATABASE_URL" -f scripts/migrate-social-posts-stage1.sql
 https://{domain}/r/{tenantSlug}?src=fb-{itemslug}-{yyyymmdd}
 ```
 
-- Clicks: `qr_scans.meta.src`
+- Clicks (ROI): human `qr_scans` only — excludes `facebookexternalhit`, `curl`, and other scrapers (`qrScanBotFilter.ts`)
+- Bot clicks still logged + shown as `botClicks` for transparency (link-preview crawlers)
 - Orders: `orders.source_detail.src` (paid only)
 - Channel mapping: `src` starting with `fb` / facebook → channel `facebook`
 

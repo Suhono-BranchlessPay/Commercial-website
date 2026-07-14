@@ -318,7 +318,7 @@
         <button class="btn ghost" id="socialPostSkipBtn" type="button">Skip</button>
       </div>
       <table>
-        <thead><tr><th>Item</th><th>Status</th><th>src</th><th class="num">Clicks</th><th class="num">Orders</th><th class="num">$</th></tr></thead>
+        <thead><tr><th>Item</th><th>Status</th><th>src</th><th class="num">Human</th><th class="num">Orders</th><th class="num">$</th></tr></thead>
         <tbody id="socialPostRows"><tr><td colspan="6" class="empty">No drafts yet.</td></tr></tbody>
       </table>
     </div>
@@ -844,13 +844,17 @@ function renderQrScans(data) {
     return;
   }
   const by = (data.by_tenant || []).map((t) => t.slug + ': <b>' + t.scans + '</b>').join(' · ') || 'none yet';
-  const bySrc = (data.by_src || []).map((t) => (t.src || '(none)') + ': <b>' + t.scans + '</b>').join(' · ') || 'none yet';
-  $('qrScanStats').innerHTML = '<div style="padding:14px 20px;font-size:14px">Scans in range: <b>' + (data.total_scans || 0) + '</b> · ' + by +
-    '<br>By src: ' + bySrc +
-    '<div style="margin-top:8px;font-size:12px;color:var(--muted)">Print URL: https://&lt;domain&gt;/r/&lt;slug&gt;?src=flyer (e.g. /r/samurai?src=flyer). Landing is config-driven — no reprint when order URL changes.</div></div>';
+  const bySrc = (data.by_src || []).map((t) => {
+    const human = t.human != null ? t.human : t.scans;
+    const bot = t.bot || 0;
+    return (t.src || '(none)') + ': <b>' + human + '</b> human' + (bot ? ' · ' + bot + ' bot' : '');
+  }).join(' · ') || 'none yet';
+  $('qrScanStats').innerHTML = '<div style="padding:14px 20px;font-size:14px">Scans in range: <b>' + (data.total_scans || 0) + '</b> (human <b>' + (data.human_scans ?? '—') + '</b> · bot/scraper <b>' + (data.bot_scans ?? '—') + '</b>) · ' + by +
+    '<br>By src (ROI = human): ' + bySrc +
+    '<div style="margin-top:8px;font-size:12px;color:var(--muted)">Print URL: https://&lt;domain&gt;/r/&lt;slug&gt;?src=flyer. Bots (facebookexternalhit, curl, …) excluded from human counts. Landing is config-driven — no reprint when order URL changes.</div></div>';
   const rows = data.recent || [];
   $('qrScanRows').innerHTML = rows.length
-    ? rows.slice(0, 12).map((s) => '<tr><td>' + (s.created_at ? new Date(s.created_at).toLocaleString() : '—') + '</td><td class="mono">' + (s.tenant_slug || '—') + (s.src ? ' · ' + s.src : '') + '</td><td class="hide-sm" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--muted)">' + (s.user_agent || '—') + '</td></tr>').join('')
+    ? rows.slice(0, 12).map((s) => '<tr><td>' + (s.created_at ? new Date(s.created_at).toLocaleString() : '—') + '</td><td class="mono">' + (s.tenant_slug || '—') + (s.src ? ' · ' + s.src : '') + (s.is_bot ? ' · bot' : '') + '</td><td class="hide-sm" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--muted)">' + (s.user_agent || '—') + '</td></tr>').join('')
     : '<tr><td colspan="3" class="empty">No QR scans in this range (table starts empty until flyers use /r/:slug?src=…).</td></tr>';
 }
 
@@ -1118,10 +1122,10 @@ $('socialPostPerfBtn').addEventListener('click', async () => {
     const data = await api('/social-posts/performance?tenant_id=' + encodeURIComponent(tenant));
     const rows = data.posts || [];
     $('socialPostRows').innerHTML = rows.length
-      ? rows.map((p) => '<tr><td>' + esc(p.menuItemName) + '</td><td>posted</td><td class="mono">' + esc(p.srcTag) + '</td><td class="num">' + p.clicks + '</td><td class="num">' + p.orders + '</td><td class="num">' + money(p.revenueCents) + '</td></tr>').join('')
+      ? rows.map((p) => '<tr><td>' + esc(p.menuItemName) + '</td><td>posted</td><td class="mono">' + esc(p.srcTag) + '</td><td class="num">' + p.clicks + (p.botClicks ? ' <span style="color:var(--muted);font-size:11px">(+'+p.botClicks+' bot)</span>' : '') + '</td><td class="num">' + p.orders + '</td><td class="num">' + money(p.revenueCents) + '</td></tr>').join('')
       : '<tr><td colspan="6" class="empty">No posted rows yet — mark a draft as posted first.</td></tr>';
     $('socialPostMsg').style.display = 'block';
-    $('socialPostMsg').textContent = data.note || 'Performance refreshed.';
+    $('socialPostMsg').textContent = (data.note || 'Performance refreshed.') + ' Clicks = human only (FB preview/curl filtered).';
   } catch (e) {
     $('socialPostMsg').style.display = 'block';
     $('socialPostMsg').textContent = e.message || 'Performance failed';
