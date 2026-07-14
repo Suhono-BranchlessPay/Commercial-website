@@ -1,0 +1,47 @@
+key,english,current_draft,corrected_by_native,notes
+gate.title,Orderly Foods Console,Orderly Foods कन्सोल,,
+gate.subtitle,Platform staff only — not a restaurant owner tool.,Platform staff only — not a restaurant owner tool.,,YES — still English fallback
+gate.email,Work email,Work email,,YES — still English fallback
+gate.password,Password,Password,,YES — still English fallback
+gate.signin,Sign in,साइन इन,,
+gate.fine,Private tool. Unauthorized access is prohibited.,Private tool. Unauthorized access is prohibited.,,YES — still English fallback
+top.signout,Sign out,साइन आउट,,
+toolbar.range,Range,Range,,YES — still English fallback
+toolbar.tenant,Tenant,Tenant,,YES — still English fallback
+toolbar.all_tenants,All tenants,All tenants,,YES — still English fallback
+toolbar.refresh,Refresh,Refresh,,YES — still English fallback
+toolbar.export,Export CSV,Export CSV,,YES — still English fallback
+range.today,Today,Today,,YES — still English fallback
+range.7d,Last 7 days,Last 7 days,,YES — still English fallback
+range.28d,Last 28 days,Last 28 days,,YES — still English fallback
+range.30d,Last 30 days,Last 30 days,,YES — still English fallback
+panel.live_orders,Live orders,Live orders,,YES — still English fallback
+panel.live_badge,Kitchen board,Kitchen board,,YES — still English fallback
+panel.anchors,Anchor verification,Anchor verification,,YES — still English fallback
+panel.anchors_badge,On-chain,On-chain,,YES — still English fallback
+panel.top_items,Top items,Top items,,YES — still English fallback
+panel.by_category,By category,By category,,YES — still English fallback
+panel.by_hour,Orders by hour,Orders by hour,,YES — still English fallback
+panel.by_day,Orders by day,Orders by day,,YES — still English fallback
+panel.payments,Payments & tips,Payments & tips,,YES — still English fallback
+panel.payments_badge,Honest,Honest,,YES — still English fallback
+panel.anchor_health,Anchor health,Anchor health,,YES — still English fallback
+panel.anchor_health_badge,Moat,Moat,,YES — still English fallback
+panel.qr,QR scans,QR scans,,YES — still English fallback
+panel.qr_badge,Flyer,Flyer,,YES — still English fallback
+panel.customers,Customer intelligence,Customer intelligence,,YES — still English fallback
+panel.customers_badge,Insight only,Insight only,,YES — still English fallback
+panel.social,Social inbox (trial),Social inbox (trial),,YES — still English fallback
+panel.social_badge,Human approve only,Human approve only,,YES — still English fallback
+panel.support,Support assistant,सहायता सहायक,,
+panel.support_badge,KB only,KB only,,YES — still English fallback
+support.hint,Answers only from the knowledge base. Low confidence escalates to a human — never invents money or health advice.,Answers only from the knowledge base. Low confidence escalates to a human — never invents money or health advice.,,YES — still English fallback
+support.ask,Ask a question,Ask a question,,YES — still English fallback
+support.send,Ask,सोध्नुहोस्,,
+support.escalate,Escalate to human,Escalate to human,,YES — still English fallback
+support.kb,Knowledge base,Knowledge base,,YES — still English fallback
+support.escalations,Open escalations,Open escalations,,YES — still English fallback
+support.placeholder,e.g. How do I change the menu?,e.g. How do I change the menu?,,YES — still English fallback
+soon.title,Coming soon (honest — not invented),Coming soon (honest — not invented),,YES — still English fallback
+lang.label,Language,भाषा,,
+lang.review_banner,Some translations (Thai / Myanmar / Nepali / Arabic) need native-speaker review before relying on them with owners.,नेपाली अनुवाद मूलभाषी समीक्षा आवश्यक छ।,,

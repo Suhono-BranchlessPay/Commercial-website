@@ -89,7 +89,17 @@
   .kb-list{padding:0 20px 16px;font-size:13px;color:var(--muted)}
   .kb-list details{margin:6px 0;border-top:1px solid var(--line);padding-top:6px}
   .kb-list summary{cursor:pointer;font-weight:700;color:var(--ink)}
+  /* Blok F — Arabic RTL layout checks */
   html[dir=rtl] .topbar .right,html[dir=rtl] .toolbar{flex-direction:row-reverse}
+  html[dir=rtl] .who{text-align:left}
+  html[dir=rtl] .panel-h{flex-direction:row-reverse}
+  html[dir=rtl] .support-ask{flex-direction:row-reverse}
+  html[dir=rtl] .btn,html[dir=rtl] .logout{font-family:inherit}
+  html[dir=rtl] table th,html[dir=rtl] table td{text-align:right}
+  html[dir=rtl] table th.num,html[dir=rtl] table td.num{text-align:left}
+  html[dir=rtl] .stat .k,html[dir=rtl] .stat .s{text-align:right}
+  html[dir=rtl] .gate-card label{text-align:right}
+  html[dir=rtl] .msg{text-align:right}
   @media(max-width:860px){.stats,.grid2{grid-template-columns:1fr 1fr}.hide-sm{display:none}}
   @media(max-width:560px){.stats,.grid2{grid-template-columns:1fr}}
 </style>
