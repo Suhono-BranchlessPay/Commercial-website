@@ -53,7 +53,7 @@ export interface SquareOrderResult {
 const SQUARE_API_VERSION = "2024-11-20";
 const PREP_TIME_DURATION = "PT20M";
 
-type SquareCreds = {
+export type SquareCreds = {
   accessToken: string;
   locationId: string;
   applicationId: string;
@@ -91,8 +91,14 @@ function resolveSquareCredsFromEnv(slug: string): SquareCreds | null {
  * it never reaches the DB branch below). Only tenants onboarded via real
  * Square OAuth (Blok 3.1, no env tokens set) fall back to the encrypted
  * square_oauth_connections row for their tenant id. See lib/squareOauth.ts.
+ *
+ * Public + exported (Blok A) so other modules — e.g.
+ * lib/squareMenuSync.ts — can resolve the same creds without duplicating
+ * this env-first-then-OAuth-DB resolution logic.
  */
-async function resolveSquareCreds(slug: string): Promise<SquareCreds | null> {
+export async function getSquareCredsForTenantSlug(
+  slug: string,
+): Promise<SquareCreds | null> {
   const envCreds = resolveSquareCredsFromEnv(slug);
   if (envCreds) return envCreds;
 
@@ -109,6 +115,9 @@ async function resolveSquareCreds(slug: string): Promise<SquareCreds | null> {
         : "https://connect.squareupsandbox.com",
   };
 }
+
+/** @deprecated Use the exported `getSquareCredsForTenantSlug` instead. */
+const resolveSquareCreds = getSquareCredsForTenantSlug;
 
 export async function isSquareConfigured(slug?: string): Promise<boolean> {
   const s = slug ?? process.env.TENANT_ID?.trim() ?? "samurai";

@@ -35,9 +35,15 @@ import {
   buildSquareAuthorizeUrl,
   checkSquareOauthReadiness,
   completeSquareOauthExchange,
+  getSquareOauthConnectionForSession,
   saveSquareOauthConnection,
   squareOauthEnvironment,
 } from "../lib/squareOauth";
+import {
+  getTenantSlugById,
+  syncSquareMenuForTenant,
+  triggerMenuSyncForTenantId,
+} from "../lib/squareMenuSync";
 
 const router = Router();
 
@@ -373,7 +379,7 @@ router.get("/square/callback", async (req, res): Promise<void> => {
     }
 
     const exchange = await completeSquareOauthExchange(code);
-    await saveSquareOauthConnection({
+    const connection = await saveSquareOauthConnection({
       onboardingSessionId: session.id,
       exchange,
     });
@@ -382,6 +388,14 @@ router.get("/square/callback", async (req, res): Promise<void> => {
       exchange.merchantId,
       exchange.locationId,
     );
+
+    // Blok A — if this session's Square connection is already linked to a
+    // real tenant (e.g. an existing restaurant reconnecting Square), pull
+    // its menu now. Draft/unpublished sessions have no tenant yet — /publish
+    // triggers the initial sync for those instead (see lib/onboarding.ts).
+    if (connection.tenantId) {
+      triggerMenuSyncForTenantId(connection.tenantId, "square_oauth_callback");
+    }
 
     if (uiBaseUrl) {
       const redirectUrl = new URL("/onboarding", uiBaseUrl);
@@ -439,6 +453,45 @@ router.post("/:id/publish", async (req, res): Promise<void> => {
   } catch (err) {
     req.log?.error({ err }, "Onboarding publish failed");
     res.status(500).json({ error: "Failed to publish onboarding session" });
+  }
+});
+
+/**
+ * Blok A — manual "sync menu now" for the onboarding wizard. Only works once
+ * this session's Square connection is linked to a real tenant (i.e. after
+ * /publish) since Square catalog rows land in Orderly's tenant-scoped
+ * menu_items/menu_categories tables, not on the draft session itself.
+ */
+router.post("/:id/menu/sync", async (req, res): Promise<void> => {
+  try {
+    const row = await getOnboardingSessionRow(req.params.id);
+    if (!row) {
+      res.status(404).json({ error: "Onboarding session not found" });
+      return;
+    }
+    const connection = await getSquareOauthConnectionForSession(row.id);
+    const tenantId = connection?.tenantId ?? null;
+    if (!tenantId) {
+      res.status(400).json({
+        error:
+          "No linked tenant yet for this session — connect Square and publish first.",
+      });
+      return;
+    }
+    const slug = await getTenantSlugById(tenantId);
+    if (!slug) {
+      res.status(404).json({ error: "Linked tenant not found" });
+      return;
+    }
+    const summary = await syncSquareMenuForTenant({
+      tenantId,
+      slug,
+      reason: "manual-onboarding",
+    });
+    res.json({ ok: summary.ok, summary });
+  } catch (err) {
+    req.log?.error({ err }, "Onboarding menu sync failed");
+    res.status(500).json({ error: "Failed to sync menu" });
   }
 });
 

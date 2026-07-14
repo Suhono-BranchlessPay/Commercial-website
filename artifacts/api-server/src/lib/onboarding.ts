@@ -17,6 +17,7 @@ import { db, onboardingSessionsTable, tenantsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import type { OnboardingSession } from "@workspace/db";
 import { linkSquareOauthConnectionToTenant } from "./squareOauth";
+import { triggerMenuSyncForTenantId } from "./squareMenuSync";
 
 export const ONBOARDING_STATUSES = [
   "draft",
@@ -285,6 +286,10 @@ export async function publishDraftTenantShell(
   // DB row's tenant_id.
   if (session.squareMerchantId && session.squareLocationId) {
     await linkSquareOauthConnectionToTenant(session.id, tenantId);
+    // Blok A — Square is the source of truth for the menu. Now that this
+    // tenant has a linked Square connection, pull its catalog in the
+    // background (fire-and-forget; never blocks /publish on Square's API).
+    triggerMenuSyncForTenantId(tenantId, "onboarding_publish");
   }
 
   return { tenantId };

@@ -1,6 +1,7 @@
 export * from "./tenants";
 export * from "./merchants";
 export * from "./menu";
+export * from "./menuSync";
 export * from "./customers";
 export * from "./settings";
 export * from "./bridge";

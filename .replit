@@ -25,4 +25,6 @@ channel = "stable-25_05"
 [userenv]
 
 [userenv.shared]
-OWNER_PIN = "Malik789*#!"
+# Blok 0 — OWNER_PIN must never be committed here (it was previously
+# hardcoded in plaintext). Set it as a real Replit Secret instead:
+# Tools -> Secrets -> OWNER_PIN. See docs/BLOK0_SECRET_ROTATION.md.

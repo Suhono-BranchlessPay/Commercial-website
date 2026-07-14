@@ -169,6 +169,14 @@
         <tbody id="anchorRows"></tbody>
       </table>
     </div>
+    <div class="panel">
+      <div class="panel-h"><h2>Square menu sync</h2><span class="live"><span class="pulse"></span><span>Square is source of truth</span></span></div>
+      <div id="menuSyncStats" class="empty">Pick a single tenant to see Square menu sync status.</div>
+      <div style="padding:0 20px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="btn ghost" id="syncMenuBtn" type="button">Sync menu now</button>
+        <span style="font-size:12px;color:var(--muted)">Pulls categories/items/prices/availability from Square. Orderly never writes back to Square.</span>
+      </div>
+    </div>
     <div class="grid2">
       <div class="panel">
         <div class="panel-h"><h2 data-i18n="panel.top_items">Top items</h2></div>
@@ -572,6 +580,32 @@ function renderSummary(summary) {
   $('soonList').innerHTML = Object.entries(soon).map(([k,v]) => '<li><b>' + k.replace(/_/g, ' ') + '</b> — ' + v + '</li>').join('');
 }
 
+function renderMenuSync(state) {
+  if (!state) {
+    $('menuSyncStats').innerHTML = '<div class="empty">No sync recorded yet for this tenant. Pick a single tenant and click "Sync menu now".</div>';
+    return;
+  }
+  const last = state.last_success_at ? new Date(state.last_success_at).toLocaleString() : 'never';
+  const errLine = state.last_error
+    ? '<div style="color:var(--danger);margin-top:6px">Last error (' + (state.last_error_at ? new Date(state.last_error_at).toLocaleString() : '') + '): ' + esc(state.last_error) + '</div>'
+    : '';
+  $('menuSyncStats').innerHTML = '<div style="padding:14px 20px;font-size:14px">Last successful sync: <b>' + last + '</b>' +
+    (state.last_item_count != null ? ' · Items synced: <b>' + state.last_item_count + '</b>' : '') + errLine + '</div>';
+}
+async function loadMenuSync() {
+  const tenant = $('tenant') ? $('tenant').value : '';
+  if (!tenant) {
+    renderMenuSync(null);
+    $('menuSyncStats').innerHTML = '<div class="empty">Pick a single tenant to see Square menu sync status.</div>';
+    return;
+  }
+  try {
+    const data = await api('/menu-sync?tenant_id=' + encodeURIComponent(tenant));
+    renderMenuSync(data.state);
+  } catch (e) {
+    $('menuSyncStats').innerHTML = '<div class="empty">Could not load menu sync status: ' + esc(e.message || 'Failed to load') + '</div>';
+  }
+}
 function renderAnchors(anchors) {
   const arows = (anchors && anchors.orders) || [];
   $('anchorRows').innerHTML = arows.length ? arows.map((o) => {
@@ -692,6 +726,7 @@ async function loadAll(opts) {
       api('/reports/by-time?' + q).then((d) => { if (gen === loadGen) renderByTime(d); }),
       api('/reports/anchor-health?' + q).then((d) => { if (gen === loadGen) renderAnchorHealth(d); }),
       api('/reports/qr-scans?' + q).then((d) => { if (gen === loadGen) renderQrScans(d); }),
+      loadMenuSync(),
       loadSocialInbox(),
       loadSupportKb(),
     ];
@@ -739,6 +774,19 @@ $('syncAnchorsBtn').addEventListener('click', async () => {
     await loadAll({ force: true });
   } catch (e) {
     flash(e.message || 'Anchor sync failed');
+  }
+});
+$('syncMenuBtn').addEventListener('click', async () => {
+  const tenant = $('tenant').value;
+  if (!tenant) { flash('Pick a single tenant first.'); return; }
+  flash('');
+  try {
+    const data = await api('/menu-sync', { method: 'POST', body: JSON.stringify({ tenant_id: tenant }) });
+    const s = data.summary || {};
+    flash('Menu sync: ' + (s.items || 0) + ' items · ' + (s.categories || 0) + ' categories · ' + (s.available || 0) + ' available' + (s.disabled ? ' · ' + s.disabled + ' disabled' : '') + (s.error ? ' · error: ' + s.error : ''));
+    await loadMenuSync();
+  } catch (e) {
+    flash(e.message || 'Menu sync failed');
   }
 });
 document.addEventListener('visibilitychange', () => {

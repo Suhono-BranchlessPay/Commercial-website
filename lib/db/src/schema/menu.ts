@@ -14,6 +14,12 @@ export const menuCategoriesTable = pgTable("menu_categories", {
    * zero behavior change.
    */
   parentId: text("parent_id"),
+  /**
+   * Blok A — Square is the source of truth for menu data. Set when this
+   * category was created/updated by squareMenuSync.ts; null for categories
+   * that only ever existed in Orderly (never written back to Square).
+   */
+  squareCategoryId: text("square_category_id"),
 });
 
 /**
@@ -61,6 +67,21 @@ export const menuItemsTable = pgTable("menu_items", {
   weightGrams: integer("weight_grams"),
   /** Age-gated item flag (e.g. alcohol, tobacco). False for existing menu items. */
   ageRestricted: boolean("age_restricted").notNull().default(false),
+
+  // --- Blok A: Square → Orderly menu sync seams (all nullable/non-breaking) ---
+  // SQUARE = source of truth. Orderly never writes these back to Square.
+  /** Square catalog ITEM id this row was synced from (null = Orderly-native item). */
+  squareCatalogObjectId: text("square_catalog_object_id"),
+  /** Square catalog ITEM_VARIATION id — one Orderly menu_items row per Square variation. */
+  squareVariationId: text("square_variation_id"),
+  /** Square CATEGORY id this item belonged to at last sync (see menu_categories.square_category_id). */
+  squareCategoryId: text("square_category_id"),
+  /** Best-effort modifier lists from Square: [{ list_id, list_name, modifiers: [{id,name,price}] }]. */
+  squareModifiers: jsonb("square_modifiers")
+    .$type<Array<Record<string, unknown>>>()
+    .notNull()
+    .default([]),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 export const ordersTable = pgTable("orders", {

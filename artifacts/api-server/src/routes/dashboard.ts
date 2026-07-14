@@ -29,6 +29,11 @@ import {
 import { buildCustomerIntelligence } from "../lib/customerIntelligence";
 import { requireOrderlyDashboardHost } from "../lib/dashboardHost";
 import { syncMissingAnchorProofs } from "../lib/anchorProof";
+import {
+  getMenuSyncState,
+  getTenantSlugById,
+  syncSquareMenuForTenant,
+} from "../lib/squareMenuSync";
 
 declare global {
   namespace Express {
@@ -427,6 +432,78 @@ router.get(
     } catch (err) {
       req.log?.error({ err }, "Dashboard anchor health failed");
       res.status(500).json({ error: "Failed to build anchor health" });
+    }
+  },
+);
+
+/**
+ * Blok A — Square is the source of truth for the menu; this only reports
+ * the status of the last pull (never writes to Square).
+ */
+router.get(
+  "/menu-sync",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const tenantId = scopedTenant(req, res);
+      if (tenantId === undefined) return;
+      if (!tenantId) {
+        res.json({ state: null, note: "Pick a single tenant to see Square menu sync status." });
+        return;
+      }
+      const state = await getMenuSyncState(tenantId);
+      res.json({
+        state: state
+          ? {
+              tenant_id: state.tenantId,
+              last_started_at: state.lastStartedAt,
+              last_success_at: state.lastSuccessAt,
+              last_error_at: state.lastErrorAt,
+              last_error: state.lastError,
+              last_item_count: state.lastItemCount,
+            }
+          : null,
+      });
+    } catch (err) {
+      req.log?.error({ err }, "Dashboard menu-sync status failed");
+      res.status(500).json({ error: "Failed to load menu sync status" });
+    }
+  },
+);
+
+/** Manual "Sync now" — triggers a real Square catalog pull for one tenant. */
+router.post(
+  "/menu-sync",
+  requireDashboardAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const user = req.dashboardUser!;
+      const requested =
+        typeof req.body?.tenant_id === "string" ? req.body.tenant_id.trim() : null;
+      const scope = resolveScopedTenantId(user, requested || null);
+      if (!scope.ok) {
+        res.status(403).json({ error: scope.error });
+        return;
+      }
+      const tenantId = scope.tenantId;
+      if (!tenantId) {
+        res.status(400).json({ error: "tenant_id is required to trigger a sync" });
+        return;
+      }
+      const slug = await getTenantSlugById(tenantId);
+      if (!slug) {
+        res.status(404).json({ error: "Tenant not found" });
+        return;
+      }
+      const summary = await syncSquareMenuForTenant({
+        tenantId,
+        slug,
+        reason: "manual-dashboard",
+      });
+      res.json({ ok: summary.ok, summary });
+    } catch (err) {
+      req.log?.error({ err }, "Dashboard menu sync trigger failed");
+      res.status(500).json({ error: "Failed to sync menu" });
     }
   },
 );
