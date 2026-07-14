@@ -125,6 +125,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
     cityLine,
     weeklyHours,
     storefront,
+    showPoweredBy,
+    tenant,
   } = useTenant();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [location] = useLocation();
@@ -132,6 +134,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const mapsQuery = encodeURIComponent(`${addressLine} ${cityLine}`.trim());
   const navMinimal = storefront.navVariant === "nav-minimal-light";
   const footerCompact = storefront.footerVariant === "footer-compact";
+  const poweredByHref = `https://orderlyfoods.com/?utm_source=customer-website&utm_medium=powered-by&utm_campaign=${encodeURIComponent(
+    tenant?.tenantId || "unknown",
+  )}`;
 
   const headerClass = navMinimal
     ? "sticky top-0 z-50 w-full border-b border-border bg-background"
@@ -297,6 +302,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
               © {new Date().getFullYear()} {brandName}
             </p>
           </div>
+          {showPoweredBy ? (
+            <p className="container mx-auto px-4 mt-6 text-center text-[11px] text-muted-foreground/70">
+              Powered by{" "}
+              <a
+                href={poweredByHref}
+                className="underline underline-offset-2 hover:text-primary"
+                rel="noopener noreferrer"
+              >
+                Orderly
+              </a>
+            </p>
+          ) : null}
         </footer>
       ) : (
         <footer className="bg-accent text-accent-foreground py-16 border-t-4 border-primary">
@@ -359,6 +376,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <p className="text-xs text-accent-foreground/30 mt-1">
                   {cityLine} · All rights reserved
                 </p>
+                {showPoweredBy ? (
+                  <p className="text-[11px] text-accent-foreground/35 mt-3">
+                    Powered by{" "}
+                    <a
+                      href={poweredByHref}
+                      className="underline underline-offset-2 hover:text-primary"
+                      rel="noopener noreferrer"
+                    >
+                      Orderly
+                    </a>
+                  </p>
+                ) : null}
               </div>
             </div>
           </div>

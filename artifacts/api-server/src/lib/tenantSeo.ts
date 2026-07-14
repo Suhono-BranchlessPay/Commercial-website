@@ -91,25 +91,77 @@ const DAY_MAP: Record<string, string> = {
   sunday: "Sunday",
 };
 
+function parseAmPmTime(raw: string): string | null {
+  const m = raw
+    .trim()
+    .match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i);
+  if (!m) return null;
+  let h = Number(m[1]);
+  const min = m[2] ? Number(m[2]) : 0;
+  const ap = m[3].toUpperCase();
+  if (ap === "PM" && h < 12) h += 12;
+  if (ap === "AM" && h === 12) h = 0;
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+function parseHoursRange(val: string): { opens: string; closes: string } | null {
+  const iso = val.match(/(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/);
+  if (iso) return { opens: iso[1], closes: iso[2] };
+  const ampm = val.match(
+    /(\d{1,2}(?::\d{2})?\s*(?:AM|PM))\s*[-–]\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM))/i,
+  );
+  if (!ampm) return null;
+  const opens = parseAmPmTime(ampm[1]);
+  const closes = parseAmPmTime(ampm[2]);
+  if (!opens || !closes) return null;
+  return { opens, closes };
+}
+
 function parseOpeningHours(
   hours: Record<string, unknown> | null | undefined,
 ): TenantSeo["openingHours"] {
   if (!hours || typeof hours !== "object") return [];
   const out: TenantSeo["openingHours"] = [];
+
+  // Theme pack format: { weekly: [{ day: "Monday", hours: "11AM – 8:30PM" }, ...] }
+  const weekly = hours.weekly;
+  if (Array.isArray(weekly)) {
+    for (const row of weekly) {
+      if (!row || typeof row !== "object") continue;
+      const r = row as Record<string, unknown>;
+      const dayRaw = typeof r.day === "string" ? r.day : "";
+      const hoursRaw = typeof r.hours === "string" ? r.hours : "";
+      const day = DAY_MAP[dayRaw.toLowerCase()] || DAY_MAP[dayRaw.slice(0, 3).toLowerCase()];
+      if (!day || !hoursRaw) continue;
+      const range = parseHoursRange(hoursRaw);
+      if (range) out.push({ dayOfWeek: day, ...range });
+    }
+    if (out.length) return out;
+  }
+
   for (const [key, val] of Object.entries(hours)) {
+    if (key === "weekly") continue;
     const day = DAY_MAP[key.toLowerCase()];
     if (!day) continue;
     if (typeof val === "string") {
-      const m = val.match(
-        /(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/,
-      );
-      if (m) out.push({ dayOfWeek: day, opens: m[1], closes: m[2] });
+      const range = parseHoursRange(val);
+      if (range) out.push({ dayOfWeek: day, ...range });
       continue;
     }
     if (val && typeof val === "object" && !Array.isArray(val)) {
       const o = val as Record<string, unknown>;
-      const opens = typeof o.open === "string" ? o.open : typeof o.opens === "string" ? o.opens : null;
-      const closes = typeof o.close === "string" ? o.close : typeof o.closes === "string" ? o.closes : null;
+      const opens =
+        typeof o.open === "string"
+          ? o.open
+          : typeof o.opens === "string"
+            ? o.opens
+            : null;
+      const closes =
+        typeof o.close === "string"
+          ? o.close
+          : typeof o.closes === "string"
+            ? o.closes
+            : null;
       if (opens && closes) out.push({ dayOfWeek: day, opens, closes });
     }
   }

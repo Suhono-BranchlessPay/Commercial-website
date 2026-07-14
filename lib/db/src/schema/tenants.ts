@@ -2,6 +2,7 @@ import {
   pgTable,
   text,
   real,
+  boolean,
   jsonb,
   timestamp,
   uniqueIndex,
@@ -63,6 +64,11 @@ export const tenantsTable = pgTable(
      * Nullable and unpopulated for existing tenants — no 1:1 lock-in.
      */
     merchantId: text("merchant_id").references(() => merchantsTable.id),
+    /**
+     * Bagian 4 — footer "Powered by Orderly" backlink.
+     * Premium packages may set false later; default true for all tenants.
+     */
+    showPoweredBy: boolean("show_powered_by").notNull().default(true),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [

@@ -634,6 +634,22 @@ export async function syncSquareMenuForTenant(input: {
 
     await touchSyncSuccess(tenantId, seenVariationIds.length, null);
 
+    // Keep programmatic SEO tag pages in sync with live menu (best-effort).
+    try {
+      const { toTenantContext } = await import("./tenant");
+      const { rebuildSeoTagsForTenant } = await import("./seoTags");
+      const tenantRows = await db
+        .select()
+        .from(tenantsTable)
+        .where(eq(tenantsTable.id, tenantId))
+        .limit(1);
+      if (tenantRows[0]) {
+        await rebuildSeoTagsForTenant(toTenantContext(tenantRows[0]));
+      }
+    } catch (seoErr) {
+      logger.warn({ err: seoErr, tenantId }, "SEO tag rebuild after menu sync failed");
+    }
+
     return {
       ok: true,
       tenantId,
