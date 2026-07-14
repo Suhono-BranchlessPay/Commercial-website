@@ -259,6 +259,25 @@
       <div class="panel-h" style="border-top:1px solid var(--line)"><h2 style="font-size:15px" data-i18n="support.escalations">Open escalations</h2></div>
       <div id="escalationList" class="kb-list">—</div>
     </div>
+    <div class="panel">
+      <div class="panel-h"><h2>Loyalty / Rewards</h2><span class="live"><span class="pulse"></span>Restaurant-owned</span></div>
+      <div style="padding:12px 20px 0;font-size:13px;color:var(--muted)">Schema live. Earn on paid orders when <code>ORDERLY_LOYALTY_ENABLED=1</code> and program status=<b>active</b>. Points = restaurant liability (not Orderly). Owner.com migrate = separate, master-only ledger.</div>
+      <div id="loyaltyStats" class="empty">Pick a tenant…</div>
+      <div style="padding:12px 20px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+        <label style="font-size:13px">Points / $ <input id="loyaltyPpd" type="number" min="0" step="1" value="1" style="width:64px;margin-left:6px"></label>
+        <label style="font-size:13px">Status
+          <select id="loyaltyStatus" style="margin-left:6px">
+            <option value="draft">draft</option>
+            <option value="active">active</option>
+            <option value="paused">paused</option>
+          </select>
+        </label>
+        <label style="font-size:13px"><input id="loyaltyEnabled" type="checkbox"> Enabled</label>
+        <button class="btn" id="loyaltySaveBtn" type="button">Save program</button>
+        <button class="btn ghost" id="loyaltyRefreshBtn" type="button">Refresh</button>
+      </div>
+      <div id="loyaltyMsg" class="msg" style="margin:0 20px 16px;display:none"></div>
+    </div>
     <div class="soon">
       <h3 data-i18n="soon.title">Coming soon (honest — not invented)</h3>
       <ul id="soonList"></ul>
@@ -622,6 +641,29 @@ function renderMenuSync(state) {
   $('menuSyncStats').innerHTML = '<div style="padding:14px 20px;font-size:14px">Last successful sync: <b>' + last + '</b>' +
     (state.last_item_count != null ? ' · Items synced: <b>' + state.last_item_count + '</b>' : '') + errLine + '</div>';
 }
+async function loadLoyalty() {
+  const tenant = $('tenant') ? $('tenant').value : '';
+  const msg = $('loyaltyMsg');
+  if (msg) msg.style.display = 'none';
+  if (!tenant) {
+    $('loyaltyStats').innerHTML = '<div class="empty">Pick a single tenant to configure loyalty.</div>';
+    return;
+  }
+  try {
+    const data = await api('/loyalty/program?tenant_id=' + encodeURIComponent(tenant));
+    const p = data.program;
+    $('loyaltyStats').innerHTML = '<div style="padding:14px 20px;font-size:14px">Engine env: <b>' + (data.engineEnabled ? 'ON' : 'OFF') + '</b> · Accounts: <b>' + (data.accounts || 0) + '</b>' +
+      (p ? ' · DB status: <b>' + p.status + '</b> · enabled flag: <b>' + (p.enabled ? 'yes' : 'no') + '</b>' : ' · No program row yet') + '</div>';
+    if (p) {
+      $('loyaltyPpd').value = p.points_per_dollar ?? p.pointsPerDollar ?? 1;
+      $('loyaltyStatus').value = p.status || 'draft';
+      $('loyaltyEnabled').checked = !!p.enabled;
+    }
+  } catch (e) {
+    $('loyaltyStats').innerHTML = '<div class="empty">' + (e.message || 'Failed to load loyalty') + '</div>';
+  }
+}
+
 async function loadMenuSync() {
   const tenant = $('tenant') ? $('tenant').value : '';
   if (!tenant) {
@@ -757,6 +799,7 @@ async function loadAll(opts) {
       api('/reports/anchor-health?' + q).then((d) => { if (gen === loadGen) renderAnchorHealth(d); }).catch(() => { if (gen === loadGen) renderAnchorHealth(null); }),
       api('/reports/qr-scans?' + q).then((d) => { if (gen === loadGen) renderQrScans(d); }).catch(() => { if (gen === loadGen) renderQrScans(null); }),
       loadMenuSync().catch(() => {}),
+      loadLoyalty().catch(() => {}),
       loadSocialInbox().catch(() => {}),
       loadSupportKb().catch(() => {}),
     ];
@@ -817,6 +860,33 @@ $('syncMenuBtn').addEventListener('click', async () => {
     await loadMenuSync();
   } catch (e) {
     flash(e.message || 'Menu sync failed');
+  }
+});
+$('loyaltyRefreshBtn').addEventListener('click', () => loadLoyalty());
+$('loyaltySaveBtn').addEventListener('click', async () => {
+  const tenant = $('tenant').value;
+  const msg = $('loyaltyMsg');
+  if (!tenant) { flash('Pick a single tenant first.'); return; }
+  try {
+    const data = await api('/loyalty/program', {
+      method: 'PUT',
+      body: JSON.stringify({
+        tenant_id: tenant,
+        enabled: $('loyaltyEnabled').checked,
+        points_per_dollar: Number($('loyaltyPpd').value) || 1,
+        status: $('loyaltyStatus').value,
+      }),
+    });
+    if (msg) {
+      msg.style.display = 'block';
+      msg.textContent = 'Saved. Engine env still ' + (data.engineEnabled ? 'ON' : 'OFF') + ' — set ORDERLY_LOYALTY_ENABLED=1 on VPS to earn on paid orders.';
+    }
+    await loadLoyalty();
+  } catch (e) {
+    if (msg) {
+      msg.style.display = 'block';
+      msg.textContent = e.message || 'Save failed';
+    }
   }
 });
 document.addEventListener('visibilitychange', () => {
