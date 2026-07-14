@@ -29,6 +29,13 @@ function Router() {
         <Route path="/account" component={Account} />
         <Route path="/tags/:slug" component={TagPage} />
         <Route path="/places/:slug" component={PlacePage} />
+        {/* Multilingual SEO prefixes — same pages, locale in path for crawlers */}
+        <Route path="/:locale/tags/:slug" component={TagPage} />
+        <Route path="/:locale/places/:slug" component={PlacePage} />
+        <Route path="/:locale/menu" component={Menu} />
+        <Route path="/:locale/order" component={Order} />
+        <Route path="/:locale/catering" component={Catering} />
+        <Route path="/:locale" component={Home} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
