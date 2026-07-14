@@ -1071,7 +1071,7 @@ router.get(
       const rows = await refreshSocialPostMetrics(tenantId);
       res.json({
         posts: rows,
-        note: "Real clicks (qr_scans) + paid orders by source_detail.src. Empty = zero.",
+        note: "Human clicks (bots filtered) + paid orders by source_detail.src. Empty = zero.",
       });
     } catch (err) {
       req.log?.error({ err }, "social-posts performance failed");

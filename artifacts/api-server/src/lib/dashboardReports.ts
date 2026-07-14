@@ -9,6 +9,7 @@ import {
 } from "@workspace/db";
 import { defaultExplorerUrl } from "./bridgeWebhook";
 import { buildAnchorHealth } from "./anchorAlerts";
+import { isLikelyBotUserAgent } from "./qrScanBotFilter";
 
 export type ReportRange = "today" | "7d" | "28d" | "30d";
 
@@ -459,25 +460,41 @@ export async function buildQrScanReport(input: {
     .limit(200);
 
   const byTenant = new Map<string, number>();
-  const bySrc = new Map<string, number>();
+  const bySrc = new Map<string, { scans: number; human: number; bot: number }>();
+  let humanTotal = 0;
+  let botTotal = 0;
   for (const s of scans) {
     byTenant.set(s.tenantSlug, (byTenant.get(s.tenantSlug) || 0) + 1);
     const meta = (s.meta || {}) as Record<string, unknown>;
     const srcKey =
       typeof meta.src === "string" && meta.src.trim() ? meta.src.trim() : "(none)";
-    bySrc.set(srcKey, (bySrc.get(srcKey) || 0) + 1);
+    const bot = isLikelyBotUserAgent(s.userAgent);
+    if (bot) botTotal += 1;
+    else humanTotal += 1;
+    const prev = bySrc.get(srcKey) || { scans: 0, human: 0, bot: 0 };
+    prev.scans += 1;
+    if (bot) prev.bot += 1;
+    else prev.human += 1;
+    bySrc.set(srcKey, prev);
   }
 
   return {
     total_scans: scans.length,
+    human_scans: humanTotal,
+    bot_scans: botTotal,
+    note: "human_scans excludes known scrapers (facebookexternalhit, curl, …). by_src.scans = raw; use human for ROI.",
     by_tenant: [...byTenant.entries()].map(([slug, scans_count]) => ({
       slug,
       scans: scans_count,
     })),
-    by_src: [...bySrc.entries()].map(([src, scans_count]) => ({
-      src,
-      scans: scans_count,
-    })),
+    by_src: [...bySrc.entries()]
+      .map(([src, v]) => ({
+        src,
+        scans: v.scans,
+        human: v.human,
+        bot: v.bot,
+      }))
+      .sort((a, b) => b.human - a.human || b.scans - a.scans),
     recent: scans.slice(0, 30).map((s) => {
       const meta = (s.meta || {}) as Record<string, unknown>;
       return {
@@ -488,6 +505,7 @@ export async function buildQrScanReport(input: {
         redirect_url: s.redirectUrl,
         created_at: s.createdAt?.toISOString() ?? null,
         user_agent: s.userAgent,
+        is_bot: isLikelyBotUserAgent(s.userAgent),
       };
     }),
   };

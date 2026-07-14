@@ -26,6 +26,7 @@ import {
   type SocialPostFacts,
 } from "./socialPostDraft";
 import { buildItemSales, type ReportRange } from "./dashboardReports";
+import { QR_SCAN_BOT_UA_PATTERN } from "./qrScanBotFilter";
 
 export function isSocialPostingEngineEnabled(): boolean {
   const v = process.env.ORDERLY_SOCIAL_POSTING_ENABLED?.trim().toLowerCase();
@@ -513,7 +514,9 @@ export async function listSocialPosts(input: {
 }
 
 /**
- * Closed-loop metrics: clicks from qr_scans.meta.src + paid orders by source_detail.src.
+ * Closed-loop metrics: human clicks from qr_scans.meta.src + paid orders by
+ * source_detail.src. Bot/scraper hits (facebookexternalhit, curl, …) are
+ * excluded from `clicks` so ROI isn't inflated by link-preview crawlers.
  * Never invents — empty = zeros.
  */
 export async function refreshSocialPostMetrics(
@@ -527,7 +530,10 @@ export async function refreshSocialPostMetrics(
     status: string;
     postedAt: Date | null;
     angle: string;
+    /** Human clicks only (ROI). */
     clicks: number;
+    /** Scraper / preview bots — shown for transparency, not used for ROI. */
+    botClicks: number;
     orders: number;
     revenueCents: number;
     trackedUrl: string;
@@ -554,22 +560,24 @@ export async function refreshSocialPostMetrics(
     postedAt: Date | null;
     angle: string;
     clicks: number;
+    botClicks: number;
     orders: number;
     revenueCents: number;
     trackedUrl: string;
   }> = [];
 
   for (const post of posts) {
+    const srcMatch = sql`lower(coalesce(${qrScansTable.meta}->>'src','')) = ${post.srcTag}`;
+    const botPat = QR_SCAN_BOT_UA_PATTERN;
     const clickRows = await db
-      .select({ c: sql<number>`count(*)::int` })
+      .select({
+        human: sql<number>`count(*) filter (where not (coalesce(${qrScansTable.userAgent}, '') ~* ${botPat}))::int`,
+        bot: sql<number>`count(*) filter (where (coalesce(${qrScansTable.userAgent}, '') ~* ${botPat}))::int`,
+      })
       .from(qrScansTable)
-      .where(
-        and(
-          eq(qrScansTable.tenantId, tenantId),
-          sql`lower(coalesce(${qrScansTable.meta}->>'src','')) = ${post.srcTag}`,
-        ),
-      );
-    const clicks = Number(clickRows[0]?.c ?? 0);
+      .where(and(eq(qrScansTable.tenantId, tenantId), srcMatch));
+    const clicks = Number(clickRows[0]?.human ?? 0);
+    const botClicks = Number(clickRows[0]?.bot ?? 0);
 
     const orderRows = await db
       .select({
@@ -607,6 +615,7 @@ export async function refreshSocialPostMetrics(
       postedAt: post.postedAt,
       angle: post.angle,
       clicks,
+      botClicks,
       orders,
       revenueCents,
       trackedUrl: post.trackedUrl,
