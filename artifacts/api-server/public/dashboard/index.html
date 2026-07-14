@@ -203,6 +203,15 @@
       </table>
       <p class="empty" style="border-top:1px solid var(--line)">No marketing sends — C5 hold (consent + lawyer).</p>
     </div>
+    <div class="panel">
+      <div class="panel-h"><h2>Social inbox (trial)</h2><span class="live"><span class="pulse"></span>Human approve only</span></div>
+      <div style="padding:12px 20px 0;font-size:13px;color:var(--muted)">Blok 4.1 skeleton — Facebook/Instagram, <b>samurai only</b>. Every reply needs a human click here; nothing auto-sends. Allergy/health/halal and spam are never drafted — they escalate or get skipped automatically.</div>
+      <div id="socialMsg" class="msg" style="margin:12px 20px 0;display:none"></div>
+      <table>
+        <thead><tr><th>From</th><th>Message</th><th>Classification</th><th>Status / draft</th><th>Action</th></tr></thead>
+        <tbody id="socialRows"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
     <div class="soon">
       <h3>Coming soon (honest — not invented)</h3>
       <ul id="soonList"></ul>
@@ -212,6 +221,7 @@
 
 <script>
 const API = '/api/dashboard';
+const SOCIAL_API = '/api/dashboard/social';
 const AUTO_REFRESH_MS = 20_000;
 const $ = (id) => document.getElementById(id);
 let user = null;
@@ -242,6 +252,120 @@ async function api(path, opts = {}) {
   if (!res.ok) throw new Error((data && data.error) || res.statusText || 'Request failed');
   return data;
 }
+async function socialApi(path, opts = {}) {
+  const res = await fetch(SOCIAL_API + path, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+    ...opts,
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = { error: text }; }
+  if (!res.ok) throw new Error((data && data.error) || res.statusText || 'Request failed');
+  return data;
+}
+function socialFlash(msg, isError) {
+  const el = $('socialMsg');
+  if (!msg) { el.style.display = 'none'; return; }
+  el.textContent = msg;
+  el.style.background = isError ? '#FBEFD6' : '#E7F0EA';
+  el.style.color = isError ? '#9A6A12' : '#154B39';
+  el.style.display = 'block';
+}
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+}
+function renderSocialInbox(data, errMsg) {
+  if (errMsg) {
+    $('socialRows').innerHTML = '<tr><td colspan="5" class="empty">Could not load social inbox: ' + esc(errMsg) + '</td></tr>';
+    return;
+  }
+  const rows = (data && data.inbox) || [];
+  if (!rows.length) {
+    $('socialRows').innerHTML = '<tr><td colspan="5" class="empty">No social messages yet — trial inbox is empty (samurai only). Needs Meta Page webhook + META_PAGE_ACCESS_TOKEN configured before anything appears here.</td></tr>';
+    return;
+  }
+  const visible = rows.filter((r) => r.status === 'new' || r.status === 'pending_approval' || r.status === 'drafted');
+  if (!visible.length) {
+    $('socialRows').innerHTML = '<tr><td colspan="5" class="empty">No pending approvals right now (' + rows.length + ' total message(s) already handled/blocked/skipped).</td></tr>';
+    return;
+  }
+  $('socialRows').innerHTML = visible.map((r) => {
+    const risk = (r.risk_flags || []).length
+      ? '<div style="font-size:11px;color:var(--danger);margin-top:3px">' + esc(r.risk_flags.join(', ')) + '</div>'
+      : '';
+    const body = esc(r.body || '—').slice(0, 240);
+    const draftArea = r.draft_reply != null
+      ? '<textarea data-edit="' + r.id + '" style="width:100%;min-height:56px;font-size:13px;border:1.5px solid var(--line);border-radius:8px;padding:7px 9px;margin-top:6px;font-family:inherit">' + esc(r.draft_reply) + '</textarea>'
+      : '<div style="font-size:12px;color:var(--muted);margin-top:4px">No draft yet.</div>';
+    const actions = [];
+    if (r.status === 'new') {
+      actions.push('<button class="btn ghost" data-draft="' + r.id + '" type="button">Draft reply</button>');
+    }
+    if (r.status === 'pending_approval' || r.status === 'drafted') {
+      actions.push('<button class="btn" data-approve="' + r.id + '" type="button">Approve</button>');
+    }
+    actions.push('<button class="btn ghost" data-skip="' + r.id + '" type="button">Skip</button>');
+    return '<tr>' +
+      '<td>' + esc(r.author_name || '—') + '<br><span style="font-size:12px;color:var(--muted)">' + esc(r.platform) + '</span></td>' +
+      '<td style="max-width:260px">' + body + risk + '</td>' +
+      '<td class="mono">' + esc(r.classification) + '</td>' +
+      '<td>' + esc(r.status) + draftArea + '</td>' +
+      '<td style="display:flex;flex-direction:column;gap:6px;min-width:110px">' + actions.join('') + '</td>' +
+      '</tr>';
+  }).join('');
+}
+async function loadSocialInbox() {
+  const tenant = $('tenant') ? $('tenant').value : '';
+  try {
+    const data = await socialApi('/inbox' + (tenant ? '?tenant_id=' + encodeURIComponent(tenant) : ''));
+    renderSocialInbox(data);
+  } catch (e) {
+    renderSocialInbox(null, e.message || 'Failed to load');
+  }
+}
+async function socialDraft(id) {
+  socialFlash('');
+  try {
+    const data = await socialApi('/inbox/' + id + '/draft', { method: 'POST', body: '{}' });
+    if (data.escalate) socialFlash(data.note || 'Escalated — needs owner attention, not auto-answerable.', true);
+    await loadSocialInbox();
+  } catch (e) {
+    socialFlash(e.message || 'Draft failed', true);
+  }
+}
+async function socialApprove(id) {
+  socialFlash('');
+  const textarea = document.querySelector('[data-edit="' + id + '"]');
+  const edited = textarea ? textarea.value : undefined;
+  try {
+    const data = await socialApi('/inbox/' + id + '/approve', {
+      method: 'POST',
+      body: JSON.stringify(edited ? { edited_body: edited } : {}),
+    });
+    socialFlash('Approved. Send is deferred until a real Meta token + human-approve mode are proven (' + (data.send || '') + ').');
+    await loadSocialInbox();
+  } catch (e) {
+    socialFlash(e.message || 'Approve failed', true);
+  }
+}
+async function socialSkip(id) {
+  socialFlash('');
+  try {
+    await socialApi('/inbox/' + id + '/skip', { method: 'POST', body: '{}' });
+    await loadSocialInbox();
+  } catch (e) {
+    socialFlash(e.message || 'Skip failed', true);
+  }
+}
+$('socialRows').addEventListener('click', (e) => {
+  const draftId = e.target.getAttribute && e.target.getAttribute('data-draft');
+  const approveId = e.target.getAttribute && e.target.getAttribute('data-approve');
+  const skipId = e.target.getAttribute && e.target.getAttribute('data-skip');
+  if (draftId) socialDraft(draftId);
+  else if (approveId) socialApprove(approveId);
+  else if (skipId) socialSkip(skipId);
+});
 function setAutoHint(extra) {
   const el = $('autoHint');
   if (!el) return;
@@ -456,6 +580,7 @@ async function loadAll(opts) {
       api('/reports/by-time?' + q).then((d) => { if (gen === loadGen) renderByTime(d); }),
       api('/reports/anchor-health?' + q).then((d) => { if (gen === loadGen) renderAnchorHealth(d); }),
       api('/reports/qr-scans?' + q).then((d) => { if (gen === loadGen) renderQrScans(d); }),
+      loadSocialInbox(),
     ];
     if (wantCustomers) {
       rest.push(api('/reports/customers?' + q).then((d) => { if (gen === loadGen) renderCustomers(d); }));

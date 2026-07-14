@@ -197,13 +197,27 @@ export async function resolveDashboardSession(
   };
 }
 
+/** Cookie or Bearer token reader shared by dashboard + other console-auth routes (e.g. social). */
+export function readDashboardSessionToken(req: {
+  cookies?: Record<string, string>;
+  headers: Record<string, unknown>;
+}): string | undefined {
+  const fromCookie = req.cookies?.[sessionCookieName()];
+  if (typeof fromCookie === "string" && fromCookie) return fromCookie;
+  const auth = req.headers.authorization;
+  if (typeof auth === "string" && auth.toLowerCase().startsWith("bearer ")) {
+    return auth.slice(7).trim() || undefined;
+  }
+  return undefined;
+}
+
 /**
  * Resolve which tenant_id the caller may query.
  * Manager: forced to their tenant (ignore client tenant_id).
  * Master: may pass tenant_id, or omit for multi-tenant aggregate where supported.
  */
 export function resolveScopedTenantId(
-  user: DashboardUser,
+  user: Pick<DashboardUser, "role" | "tenantId">,
   requestedTenantId: string | undefined | null,
 ): { ok: true; tenantId: string | null } | { ok: false; error: string } {
   if (user.role === "manager") {
