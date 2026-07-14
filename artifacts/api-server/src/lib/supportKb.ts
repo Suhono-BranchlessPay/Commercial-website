@@ -137,6 +137,17 @@ const PLATFORM_SEED_EN: SeedArticle[] = [
       "before the public storefront goes live (DNS/nginx may also be needed). Samurai’s live Square env tokens are never overwritten.",
     tags: ["onboarding", "self-serve", "oauth", "publish", "draft"],
   },
+  {
+    slug: "social-order-links",
+    title: "How do I drive orders from Facebook / Instagram / TikTok?",
+    body:
+      "Use social as a traffic driver to your Orderly site — not marketplace Shop for hot food. " +
+      "Put Order Now links with UTM tags in Page CTA, IG bio, and TikTok bio, e.g. " +
+      "https://yoursite.com/menu?utm_source=instagram&utm_medium=bio&utm_campaign=yourbrand. " +
+      "Orders show up in the console under channel facebook/instagram/tiktok. " +
+      "Do not paste access tokens in chat. Social inbox replies stay human-approved.",
+    tags: ["facebook", "instagram", "tiktok", "utm", "marketing", "bio", "cta"],
+  },
 ];
 
 function tokenize(s: string): string[] {

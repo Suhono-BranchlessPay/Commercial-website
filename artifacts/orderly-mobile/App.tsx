@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -10,6 +10,7 @@ import { CheckoutScreen } from "./src/screens/CheckoutScreen";
 import { ConfirmationScreen } from "./src/screens/ConfirmationScreen";
 import { RestaurantScreen } from "./src/screens/RestaurantScreen";
 import { tenant } from "./src/tenant";
+import { startMobileAttributionListener } from "./src/attribution";
 import type { RootStackParamList } from "./src/navigation";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -27,6 +28,8 @@ export default function App() {
       border: t.surface,
     },
   };
+
+  useEffect(() => startMobileAttributionListener(), []);
 
   return (
     <SafeAreaProvider>

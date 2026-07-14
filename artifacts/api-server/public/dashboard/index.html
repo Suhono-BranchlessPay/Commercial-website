@@ -323,9 +323,14 @@ function renderSocialInbox(data, errMsg) {
     $('socialRows').innerHTML = '<tr><td colspan="5" class="empty">No social messages yet — trial inbox is empty (samurai only). Needs Meta Page webhook + META_PAGE_ACCESS_TOKEN configured before anything appears here.</td></tr>';
     return;
   }
-  const visible = rows.filter((r) => r.status === 'new' || r.status === 'pending_approval' || r.status === 'drafted');
+  const visible = rows.filter((r) =>
+    r.status === 'new' ||
+    r.status === 'pending_approval' ||
+    r.status === 'drafted' ||
+    r.status === 'approved'
+  );
   if (!visible.length) {
-    $('socialRows').innerHTML = '<tr><td colspan="5" class="empty">No pending approvals right now (' + rows.length + ' total message(s) already handled/blocked/skipped).</td></tr>';
+    $('socialRows').innerHTML = '<tr><td colspan="5" class="empty">No pending approvals right now (' + rows.length + ' total message(s) already handled/blocked/skipped/sent).</td></tr>';
     return;
   }
   $('socialRows').innerHTML = visible.map((r) => {
@@ -342,6 +347,9 @@ function renderSocialInbox(data, errMsg) {
     }
     if (r.status === 'pending_approval' || r.status === 'drafted') {
       actions.push('<button class="btn" data-approve="' + r.id + '" type="button">Approve</button>');
+    }
+    if (r.status === 'approved') {
+      actions.push('<button class="btn" data-send="' + r.id + '" type="button">Send to Meta</button>');
     }
     actions.push('<button class="btn ghost" data-skip="' + r.id + '" type="button">Skip</button>');
     return '<tr>' +
@@ -381,10 +389,20 @@ async function socialApprove(id) {
       method: 'POST',
       body: JSON.stringify(edited ? { edited_body: edited } : {}),
     });
-    socialFlash('Approved. Send is deferred until a real Meta token + human-approve mode are proven (' + (data.send || '') + ').');
+    socialFlash('Approved. Next: click Send to Meta (only works when SOCIAL_SEND_ENABLED=1). Status: ' + (data.status || 'approved'));
     await loadSocialInbox();
   } catch (e) {
     socialFlash(e.message || 'Approve failed', true);
+  }
+}
+async function socialSend(id) {
+  socialFlash('');
+  try {
+    const data = await socialApi('/inbox/' + id + '/send', { method: 'POST', body: '{}' });
+    socialFlash('Sent to Meta. external_reply_id=' + (data.external_reply_id || data.meta_id || 'ok') + ' — turn SOCIAL_SEND_ENABLED back off after smoke.');
+    await loadSocialInbox();
+  } catch (e) {
+    socialFlash(e.message || 'Send failed (is SOCIAL_SEND_ENABLED=1 + kill switch off?)', true);
   }
 }
 async function socialSkip(id) {
@@ -399,9 +417,11 @@ async function socialSkip(id) {
 $('socialRows').addEventListener('click', (e) => {
   const draftId = e.target.getAttribute && e.target.getAttribute('data-draft');
   const approveId = e.target.getAttribute && e.target.getAttribute('data-approve');
+  const sendId = e.target.getAttribute && e.target.getAttribute('data-send');
   const skipId = e.target.getAttribute && e.target.getAttribute('data-skip');
   if (draftId) socialDraft(draftId);
   else if (approveId) socialApprove(approveId);
+  else if (sendId) socialSend(sendId);
   else if (skipId) socialSkip(skipId);
 });
 
