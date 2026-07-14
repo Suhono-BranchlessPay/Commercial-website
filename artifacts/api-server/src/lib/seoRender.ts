@@ -4,6 +4,14 @@ import {
   type TenantSeo,
   injectTenantHead,
 } from "./tenantSeo";
+import { getSeoChrome } from "./seoI18n";
+import {
+  absoluteLocaleUrl,
+  localePath,
+  resolveSeoLocales,
+  SEO_LOCALE_META,
+  type SeoLocale,
+} from "./seoLocales";
 
 export type SeoTagRow = {
   slug: string;
@@ -58,12 +66,15 @@ export function buildPageSeo(
     path: string;
     title: string;
     description: string;
+    locale?: SeoLocale;
     noindex?: boolean;
   },
 ): TenantSeo {
   const base = buildTenantSeo(tenant);
+  const locale = opts.locale || "en";
   const path = opts.path.startsWith("/") ? opts.path : `/${opts.path}`;
-  const canonical = `https://${tenant.domain}${path}`;
+  const canonical = absoluteLocaleUrl(tenant.domain, locale, path);
+  const meta = SEO_LOCALE_META[locale];
   return {
     ...base,
     title: opts.title,
@@ -75,17 +86,52 @@ export function buildPageSeo(
   };
 }
 
+export function renderHreflangLinks(opts: {
+  domain: string;
+  path: string;
+  locales: SeoLocale[];
+}): string {
+  const links = opts.locales.map((loc) => {
+    const href = absoluteLocaleUrl(opts.domain, loc, opts.path);
+    return `    <link rel="alternate" hreflang="${loc}" href="${escapeHtml(href)}" />`;
+  });
+  const xDefault = absoluteLocaleUrl(opts.domain, "en", opts.path);
+  links.push(
+    `    <link rel="alternate" hreflang="x-default" href="${escapeHtml(xDefault)}" />`,
+  );
+  return links.join("\n");
+}
+
+export function applyHtmlLang(html: string, locale: SeoLocale): string {
+  const meta = SEO_LOCALE_META[locale];
+  return html
+    .replace(/<html\b[^>]*>/i, `<html lang="${locale}" dir="${meta.dir}">`)
+    .replace(
+      /property="og:locale" content="[^"]*"/i,
+      `property="og:locale" content="${meta.ogLocale}"`,
+    );
+}
+
 export function renderTagSsrBody(opts: {
   seo: TenantSeo;
   tag: SeoTagRow;
   items: SeoPageItem[];
   relatedTags: Array<{ slug: string; name: string }>;
+  locale: SeoLocale;
 }): string {
-  const { seo, tag, items, relatedTags } = opts;
+  const { seo, tag, items, relatedTags, locale } = opts;
+  const t = getSeoChrome(locale);
   const city = seo.address.city || "";
-  const h1 = city
-    ? `${escapeHtml(tag.name)} in ${escapeHtml(city)} — ${escapeHtml(seo.brandName)}`
-    : `${escapeHtml(tag.name)} — ${escapeHtml(seo.brandName)}`;
+  const samples = items
+    .slice(0, 3)
+    .map((i) => i.name)
+    .join(", ");
+  const h1 = t.tagH1(tag.name, city, seo.brandName);
+  const lead =
+    locale === "en"
+      ? tag.description || t.tagLead(tag.name, seo.brandName, city, samples)
+      : t.tagLead(tag.name, seo.brandName, city, samples);
+  const prefix = locale === "en" ? "" : `/${locale}`;
 
   const itemListJson = items
     .map(
@@ -123,23 +169,23 @@ export function renderTagSsrBody(opts: {
     .join("\n");
 
   const related = relatedTags
-    .filter((t) => t.slug !== tag.slug)
+    .filter((x) => x.slug !== tag.slug)
     .slice(0, 8)
     .map(
-      (t) =>
-        `<a href="/tags/${escapeHtml(t.slug)}">${escapeHtml(t.name)}</a>`,
+      (x) =>
+        `<a href="${prefix}/tags/${escapeHtml(x.slug)}">${escapeHtml(x.name)}</a>`,
     )
     .join(" · ");
 
   return `
-<main class="orderly-seo-ssr" data-seo-page="tag">
-  <nav aria-label="Breadcrumb"><a href="/">Home</a> · <a href="/menu">Menu</a> · ${escapeHtml(tag.name)}</nav>
-  <h1>${h1}</h1>
-  <p>${escapeHtml(tag.description || "")}</p>
-  <p><a href="/order">Order online</a> · <a href="/menu">Full menu</a></p>
-  <h2>Order ${escapeHtml(tag.name)} from ${escapeHtml(seo.brandName)}</h2>
+<main class="orderly-seo-ssr" data-seo-page="tag" data-locale="${locale}">
+  <nav aria-label="Breadcrumb"><a href="${prefix || "/"}">${escapeHtml(t.home)}</a> · <a href="${prefix}/menu">${escapeHtml(t.menu)}</a> · ${escapeHtml(tag.name)}</nav>
+  <h1>${escapeHtml(h1)}</h1>
+  <p>${escapeHtml(lead)}</p>
+  <p><a href="${prefix}/order">${escapeHtml(t.orderOnline)}</a> · <a href="${prefix}/menu">${escapeHtml(t.fullMenu)}</a></p>
+  <h2>${escapeHtml(t.tagOrderHeading(tag.name, seo.brandName))}</h2>
   <ul class="seo-items">${cards}</ul>
-  ${related ? `<p>Related: ${related}</p>` : ""}
+  ${related ? `<p>${escapeHtml(t.related)}: ${related}</p>` : ""}
   <address>
     ${escapeHtml(seo.brandName)} ·
     ${escapeHtml([seo.address.street, seo.address.city, seo.address.state].filter(Boolean).join(", "))}
@@ -151,6 +197,7 @@ export function renderTagSsrBody(opts: {
   "@context": "https://schema.org",
   "@type": "ItemList",
   "name": "${escapeJson(tag.name)} menu",
+  "inLanguage": "${locale}",
   "itemListElement": [
 ${itemListJson}
   ]
@@ -163,12 +210,17 @@ export function renderPlaceSsrBody(opts: {
   place: SeoPlaceRow;
   featured: SeoPageItem[];
   cuisine: string;
+  locale: SeoLocale;
 }): string {
-  const { seo, place, featured, cuisine } = opts;
-  const h1 = `${escapeHtml(cuisine)} Delivery & Pickup in ${escapeHtml(place.name)} — ${escapeHtml(seo.brandName)}`;
+  const { seo, place, featured, cuisine, locale } = opts;
+  const t = getSeoChrome(locale);
+  const miles = String(place.distanceMiles);
+  const h1 = t.placeH1(cuisine, place.name, seo.brandName);
+  const lead = t.placeLead(cuisine, place.name, seo.brandName, miles);
   const deliveryLine = place.deliveryAvailable
-    ? `Delivery available within our service area (~${place.distanceMiles} miles from the restaurant).`
-    : `Pickup available — about ${place.distanceMiles} miles from ${escapeHtml(place.name)}.`;
+    ? t.deliveryAvailable(miles)
+    : t.pickupOnly(place.name, miles);
+  const prefix = locale === "en" ? "" : `/${locale}`;
 
   const cards = featured
     .map(
@@ -180,15 +232,15 @@ export function renderPlaceSsrBody(opts: {
     .join("\n");
 
   return `
-<main class="orderly-seo-ssr" data-seo-page="place">
-  <nav aria-label="Breadcrumb"><a href="/">Home</a> · <a href="/menu">Menu</a> · ${escapeHtml(place.name)}</nav>
-  <h1>${h1}</h1>
-  <p>${escapeHtml(place.metaDescription || deliveryLine)}</p>
+<main class="orderly-seo-ssr" data-seo-page="place" data-locale="${locale}">
+  <nav aria-label="Breadcrumb"><a href="${prefix || "/"}">${escapeHtml(t.home)}</a> · <a href="${prefix}/menu">${escapeHtml(t.menu)}</a> · ${escapeHtml(place.name)}</nav>
+  <h1>${escapeHtml(h1)}</h1>
+  <p>${escapeHtml(lead)}</p>
   <p>${escapeHtml(deliveryLine)}</p>
-  <p><a href="/order">Order for pickup</a> · <a href="/menu">View menu</a></p>
-  <h2>Popular from ${escapeHtml(seo.brandName)}</h2>
+  <p><a href="${prefix}/order">${escapeHtml(t.orderPickup)}</a> · <a href="${prefix}/menu">${escapeHtml(t.viewMenu)}</a></p>
+  <h2>${escapeHtml(t.popularFrom)} ${escapeHtml(seo.brandName)}</h2>
   <ul class="seo-items">${cards}</ul>
-  <h2>Restaurant location</h2>
+  <h2>${escapeHtml(t.restaurantLocation)}</h2>
   <address>
     ${escapeHtml(seo.brandName)}<br/>
     ${escapeHtml([seo.address.street, seo.address.city, seo.address.state, seo.address.postcode].filter(Boolean).join(", "))}
@@ -196,7 +248,7 @@ export function renderPlaceSsrBody(opts: {
   </address>
   <p><a href="https://www.google.com/maps/search/?api=1&amp;query=${encodeURIComponent(
     [seo.address.street, seo.address.city, seo.address.state].filter(Boolean).join(", "),
-  )}">Map &amp; directions</a></p>
+  )}">${escapeHtml(t.mapDirections)}</a></p>
 </main>
 <script type="application/ld+json">
 {
@@ -204,6 +256,7 @@ export function renderPlaceSsrBody(opts: {
   "@type": "Restaurant",
   "name": "${escapeJson(seo.brandName)}",
   "url": "${escapeJson(seo.canonical)}",
+  "inLanguage": "${locale}",
   "areaServed": {
     "@type": "City",
     "name": "${escapeJson(place.name)}"
@@ -229,11 +282,8 @@ export function injectSsrBody(html: string, body: string): string {
   if (html.includes('<div id="root"></div>')) {
     return html.replace('<div id="root"></div>', wrapped);
   }
-  if (html.includes("id=\"root\"")) {
-    return html.replace(
-      /<div id="root">[\s\S]*?<\/div>/,
-      wrapped,
-    );
+  if (html.includes('id="root"')) {
+    return html.replace(/<div id="root">[\s\S]*?<\/div>/, wrapped);
   }
   return html;
 }
@@ -242,8 +292,10 @@ export function injectPageHead(
   html: string,
   seo: TenantSeo,
   extraHead = "",
+  locale: SeoLocale = "en",
 ): string {
   let out = injectTenantHead(html, seo);
+  out = applyHtmlLang(out, locale);
   if (extraHead) {
     out = out.replace("</head>", `${extraHead}\n</head>`);
   }
@@ -253,3 +305,17 @@ export function injectPageHead(
 export function robotsMetaNoindex(): string {
   return `    <meta name="robots" content="noindex, follow" />\n`;
 }
+
+export function hreflangForTenantPage(
+  tenant: TenantContext,
+  logicalPath: string,
+): string {
+  const locales = resolveSeoLocales(tenant);
+  return renderHreflangLinks({
+    domain: tenant.domain,
+    path: logicalPath,
+    locales,
+  });
+}
+
+export { localePath, resolveSeoLocales };

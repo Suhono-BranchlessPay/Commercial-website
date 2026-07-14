@@ -4,7 +4,7 @@ import type { RequestHandler } from "express";
 import { and, eq } from "drizzle-orm";
 import { db, menuItemsTable } from "@workspace/db";
 import { resolveTenant } from "../lib/tenant";
-import { buildTenantSeo, injectTenantHead } from "../lib/tenantSeo";
+import { buildTenantSeo } from "../lib/tenantSeo";
 import {
   getTagPage,
   listIndexableTags,
@@ -17,11 +17,14 @@ import {
 } from "../lib/seoPlaces";
 import {
   buildPageSeo,
+  hreflangForTenantPage,
   injectPageHead,
   injectSsrBody,
   renderPlaceSsrBody,
   renderTagSsrBody,
 } from "../lib/seoRender";
+import { getSeoChrome } from "../lib/seoI18n";
+import { parseLocalePath } from "../lib/seoLocales";
 import { logger } from "../lib/logger";
 
 /**
@@ -51,7 +54,7 @@ async function ensureSeo(
 
 /**
  * Serve SPA index.html with Host-resolved tenant meta injected server-side.
- * For /tags/:slug and /places/:slug, also inject crawlable SSR body content.
+ * For /tags/:slug and /places/:slug (+ locale prefixes), inject crawlable SSR.
  */
 export function createSpaHtmlHandler(
   storefrontDist: string,
@@ -109,27 +112,51 @@ export function createSpaHtmlHandler(
       }
 
       const template = loadTemplate();
-      const tagMatch = urlPath.match(/^\/tags\/([^/]+)\/?$/i);
-      const placeMatch = urlPath.match(/^\/places\/([^/]+)\/?$/i);
+      const { locale, path: logicalPath } = parseLocalePath(urlPath);
+      const tagMatch = logicalPath.match(/^\/tags\/([^/]+)\/?$/i);
+      const placeMatch = logicalPath.match(/^\/places\/([^/]+)\/?$/i);
+      const chrome = getSeoChrome(locale);
 
       if (tagMatch) {
         await ensureSeo(tenant);
         const slug = decodeURIComponent(tagMatch[1]);
         const page = await getTagPage(tenant.id, slug);
         if (!page) {
-          res.status(404).send("Tag page not found (need ≥3 menu items).");
+          res.status(404).send(chrome.thinTag);
           return;
         }
         const related = await listIndexableTags(tenant.id);
+        const city = buildTenantSeo(tenant).address.city || "";
+        const title = chrome.tagH1(
+          page.tag.name,
+          city,
+          buildTenantSeo(tenant).brandName,
+        );
+        const samples = page.items
+          .slice(0, 3)
+          .map((i) => i.name)
+          .join(", ");
+        const description =
+          locale === "en"
+            ? page.tag.metaDescription || page.tag.description || ""
+            : chrome.tagLead(
+                page.tag.name,
+                buildTenantSeo(tenant).brandName,
+                city,
+                samples,
+              );
         const pageSeo = buildPageSeo(tenant, {
           path: `/tags/${page.tag.slug}`,
-          title:
-            page.tag.metaTitle ||
-            `${page.tag.name} — ${buildTenantSeo(tenant).brandName}`,
-          description:
-            page.tag.metaDescription || page.tag.description || "",
+          title,
+          description,
+          locale,
         });
-        let html = injectPageHead(template, pageSeo);
+        let html = injectPageHead(
+          template,
+          pageSeo,
+          hreflangForTenantPage(tenant, `/tags/${page.tag.slug}`),
+          locale,
+        );
         html = injectSsrBody(
           html,
           renderTagSsrBody({
@@ -140,6 +167,7 @@ export function createSpaHtmlHandler(
               slug: t.slug,
               name: t.name,
             })),
+            locale,
           }),
         );
         res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -153,10 +181,11 @@ export function createSpaHtmlHandler(
         const slug = decodeURIComponent(placeMatch[1]);
         const place = await getPlacePage(tenant.id, slug);
         if (!place) {
-          res.status(404).send("Place page not found (outside service area?).");
+          res.status(404).send(chrome.outsideArea);
           return;
         }
         const baseSeo = buildTenantSeo(tenant);
+        const cuisine = baseSeo.cuisine[0] || "Food";
         let featured = await db
           .select({
             id: menuItemsTable.id,
@@ -192,21 +221,33 @@ export function createSpaHtmlHandler(
             )
             .limit(8);
         }
+        const title = chrome.placeH1(cuisine, place.name, baseSeo.brandName);
+        const description = chrome.placeLead(
+          cuisine,
+          place.name,
+          baseSeo.brandName,
+          String(place.distanceMiles),
+        );
         const pageSeo = buildPageSeo(tenant, {
           path: `/places/${place.slug}`,
-          title:
-            place.metaTitle ||
-            `${baseSeo.cuisine[0] || "Food"} in ${place.name} — ${baseSeo.brandName}`,
-          description: place.metaDescription || "",
+          title,
+          description,
+          locale,
         });
-        let html = injectPageHead(template, pageSeo);
+        let html = injectPageHead(
+          template,
+          pageSeo,
+          hreflangForTenantPage(tenant, `/places/${place.slug}`),
+          locale,
+        );
         html = injectSsrBody(
           html,
           renderPlaceSsrBody({
             seo: pageSeo,
             place,
             featured,
-            cuisine: baseSeo.cuisine[0] || "Food",
+            cuisine,
+            locale,
           }),
         );
         res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -215,8 +256,30 @@ export function createSpaHtmlHandler(
         return;
       }
 
-      const seo = buildTenantSeo(tenant);
-      const html = injectTenantHead(template, seo);
+      const base = buildTenantSeo(tenant);
+      const seo = buildPageSeo(tenant, {
+        path: logicalPath.startsWith("/") ? logicalPath : `/${logicalPath}`,
+        title: base.title,
+        description: base.description,
+        locale,
+      });
+      // Keep homepage Restaurant JSON-LD from base canonical brand data
+      const html = injectPageHead(
+        template,
+        {
+          ...seo,
+          // Preserve rich Restaurant schema fields from base
+          openingHours: base.openingHours,
+          cuisine: base.cuisine,
+          ratingValue: base.ratingValue,
+          reviewCount: base.reviewCount,
+        },
+        hreflangForTenantPage(
+          tenant,
+          logicalPath === "/" ? "/" : logicalPath,
+        ),
+        locale,
+      );
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.setHeader("Cache-Control", "no-store");
       res.status(200).send(html);

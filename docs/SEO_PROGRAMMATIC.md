@@ -1,66 +1,42 @@
-# Programmatic SEO + Powered by Orderly (foundation)
+# Programmatic SEO + Powered by Orderly
 
 Closes the Owner.com gap for **long-tail SEO** and discovery backlinks — once,
 for every tenant (config-driven).
 
-## What shipped (this PR)
+## What shipped
 
 | Piece | Status |
 |-------|--------|
-| Schema.org Restaurant JSON-LD | ✅ improved (`hours.weekly` AM/PM parsed) |
-| Per-tenant `sitemap.xml` | ✅ `/sitemap.xml` |
-| Per-tenant `robots.txt` | ✅ `/robots.txt` (Sitemap directive; disallow `/owner` `/account`) |
-| Tag pages `/tags/{slug}` | ✅ SSR body + React page; **≥3 items** required |
-| Place pages `/places/{slug}` | ✅ only within `service_area_radius` |
-| Rebuild after Square menu sync | ✅ tags rebuilt on successful sync |
-| Dashboard rebuild | ✅ `POST /api/dashboard/seo/rebuild` `{ tenant_id }` |
-| Powered by Orderly footer | ✅ + UTM; `tenants.show_powered_by` (default true) |
-| Multilingual SEO (`/es/...`) | ❌ next slice |
-| Loyalty / Gift card | ❌ later (Parts 2–3) |
-| CrustnRoll migration | ❌ blocked until Parts 1–3 + redirects ready |
+| Schema.org Restaurant JSON-LD | ✅ (`hours.weekly` AM/PM parsed) |
+| Per-tenant `sitemap.xml` | ✅ + xhtml hreflang alternates |
+| Per-tenant `robots.txt` | ✅ |
+| Tag pages `/tags/{slug}` | ✅ SSR + React; **≥3 items** |
+| Place pages `/places/{slug}` | ✅ radius-only |
+| **Multilingual SEO** | ✅ `/es\|zh\|vi\|id\|ar/…` + hreflang |
+| Powered by Orderly footer | ✅ UTM + `show_powered_by` |
+| Loyalty / Gift card | ❌ later |
+| CrustnRoll migration | ❌ blocked until Parts 1–3 |
 
-## Hard quality rules (anti–doorway)
+## Multilingual rules
 
-- No tag page unless **≥3 available** menu items match
-- No place page outside **service radius** (haversine vs seed localities)
-- Unique descriptions per tenant (brand + city + sample items)
-- Canonical URL = tenant domain + path
+- English stays **unprefixed** (`/tags/hibachi`); other locales use `/es/tags/hibachi`
+- Menu item **names** stay as the restaurant wrote them (not machine-translated)
+- Page chrome (H1, CTA, lead) uses **curated** packs in `seoI18n.ts` (es/zh/vi/id/ar)
+- Locales: `theme.seo.locales` → else `tenants.languages` (if >1) → else `en,es,zh,vi,id,ar`
+- Every page emits `hreflang` + `x-default` + `<html lang dir>`
 
-## Migrate + rebuild (prod)
+## Ops
 
 ```bash
 psql "$DATABASE_URL" -f scripts/migrate-seo-programmatic.sql
-# after API deploy:
-curl -X POST https://orderlyfoods.com/api/dashboard/seo/rebuild \
-  -H 'Content-Type: application/json' \
-  -b 'cookies…' \
-  -d '{"tenant_id":"samurai"}'
+# Samurai nginx: document routes must proxy to Express
+# (see scripts/fix-samurai-nginx-seo.sh)
 ```
-
-Or hit `/sitemap.xml` on the tenant domain (lazy-builds empty tables).
 
 ## Verify
 
 ```bash
-curl -sS https://samurairesto.com/robots.txt | head
-curl -sS https://samurairesto.com/sitemap.xml | head -40
-curl -sS https://samurairesto.com/tags/hibachi | grep -E '<h1|MenuItem|orderly-seo-ssr'
-curl -sS https://samurairesto.com/places/martinsville-in | grep -E '<h1|areaServed'
+curl -sS https://samurairesto.com/sitemap.xml | grep hreflang | head
+curl -sS https://samurairesto.com/es/tags/hibachi | grep -E '<h1|hreflang|lang='
+curl -sS https://samurairesto.com/zh/places/martinsville-in | grep -E '<h1|inLanguage'
 ```
-
-Rich Results Test on a tag URL after deploy.
-
-## nginx
-
-Document routes `/`, `/tags/*`, `/places/*`, `/sitemap.xml`, `/robots.txt` must
-proxy to Express (already the multi-tenant pattern in
-`deploy/nginx-multi-tenant.conf.md`). Do **not** serve a static storefront
-`index.html` for those paths.
-
-## Not yet (do not claim in Orderly report as done)
-
-- SEO multibahasa + hreflang
-- Google Search Console impression dashboard
-- 301 redirect map for Owner → Orderly (CrustnRoll)
-- AI-written unique copy beyond template+item samples
-- Expanded US places dataset (current seed covers IN/KY metros)
