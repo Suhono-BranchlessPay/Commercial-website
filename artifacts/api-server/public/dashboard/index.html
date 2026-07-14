@@ -278,6 +278,31 @@
       </div>
       <div id="loyaltyMsg" class="msg" style="margin:0 20px 16px;display:none"></div>
     </div>
+    <div class="panel">
+      <div class="panel-h"><h2>Social posts (Stage 1)</h2><span class="live"><span class="pulse"></span>Human approve · no auto-post</span></div>
+      <div style="padding:12px 20px 0;font-size:13px;color:var(--muted)">Draft from menu + photo → approve → copy to Facebook manually → mark posted. Closed loop via <code>?src=</code> (clicks + paid orders). Samurai trial first. Item without photo or 86'd is skipped.</div>
+      <div id="socialPostStats" class="empty">Pick a tenant…</div>
+      <div style="padding:12px 20px 8px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+        <label style="font-size:13px">Item
+          <select id="socialPostItem" style="margin-left:6px;max-width:220px"><option value="">— load candidates —</option></select>
+        </label>
+        <button class="btn" id="socialPostDraftBtn" type="button">Generate draft</button>
+        <button class="btn ghost" id="socialPostRefreshBtn" type="button">Refresh</button>
+        <button class="btn ghost" id="socialPostPerfBtn" type="button">Performance</button>
+      </div>
+      <div id="socialPostMsg" class="msg" style="margin:0 20px 8px;display:none"></div>
+      <div id="socialPostPreview" style="display:none;margin:0 20px 12px;padding:12px;border:1px solid var(--line);border-radius:8px;font-size:13px;white-space:pre-wrap"></div>
+      <div style="padding:0 20px 12px;display:none;gap:8px;flex-wrap:wrap" id="socialPostActions">
+        <button class="btn" id="socialPostApproveBtn" type="button">Approve</button>
+        <button class="btn ghost" id="socialPostCopyBtn" type="button">Copy post + link</button>
+        <button class="btn" id="socialPostMarkBtn" type="button">Mark posted</button>
+        <button class="btn ghost" id="socialPostSkipBtn" type="button">Skip</button>
+      </div>
+      <table>
+        <thead><tr><th>Item</th><th>Status</th><th>src</th><th class="num">Clicks</th><th class="num">Orders</th><th class="num">$</th></tr></thead>
+        <tbody id="socialPostRows"><tr><td colspan="6" class="empty">No drafts yet.</td></tr></tbody>
+      </table>
+    </div>
     <div class="soon">
       <h3 data-i18n="soon.title">Coming soon (honest — not invented)</h3>
       <ul id="soonList"></ul>
@@ -664,6 +689,54 @@ async function loadLoyalty() {
   }
 }
 
+let socialPostActiveId = null;
+let socialPostFullText = '';
+
+async function loadSocialPosts() {
+  const tenant = $('tenant') ? $('tenant').value : '';
+  const msg = $('socialPostMsg');
+  if (msg) msg.style.display = 'none';
+  if (!tenant) {
+    $('socialPostStats').innerHTML = '<div class="empty">Pick a single tenant (Samurai trial).</div>';
+    return;
+  }
+  try {
+    const [cfg, cands, list] = await Promise.all([
+      api('/social-posts/config?tenant_id=' + encodeURIComponent(tenant)),
+      api('/social-posts/candidates?tenant_id=' + encodeURIComponent(tenant)),
+      api('/social-posts?tenant_id=' + encodeURIComponent(tenant)),
+    ]);
+    $('socialPostStats').innerHTML = '<div style="padding:14px 20px;font-size:14px">Stage <b>1</b> · Auto-post: <b>OFF</b> · Candidates (photo+available): <b>' + ((cands.candidates || []).length) + '</b>' +
+      (cfg.config ? ' · Config enabled: <b>' + (cfg.config.enabled ? 'yes' : 'no') + '</b>' : ' · No config row yet') + '</div>';
+    const sel = $('socialPostItem');
+    const prev = sel.value;
+    const rows = cands.candidates || [];
+    sel.innerHTML = rows.length
+      ? rows.slice(0, 60).map((c) => '<option value="' + c.menuItemId + '">' + esc(c.name) + ' · ' + money(Math.round(c.price * 100)) + (c.needsPhoto ? ' · no photo' : '') + (c.salesQty ? ' · qty ' + c.salesQty : '') + '</option>').join('')
+      : '<option value="">No available items</option>';
+    if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
+    // Prefer Steak Bento for first Samurai test
+    const steak = rows.find((c) => /steak\s*bento/i.test(c.name));
+    if (steak && !prev) sel.value = steak.menuItemId;
+    const posts = list.posts || [];
+    $('socialPostRows').innerHTML = posts.length
+      ? posts.slice(0, 30).map((p) => '<tr><td>' + esc(p.menuItemName || p.menu_item_name || '') + '</td><td>' + esc(p.status) + '</td><td class="mono">' + esc(p.srcTag || p.src_tag || '') + '</td><td class="num">' + (p.clicks || 0) + '</td><td class="num">' + (p.orders || 0) + '</td><td class="num">' + money(p.revenueCents || p.revenue_cents || 0) + '</td></tr>').join('')
+      : '<tr><td colspan="6" class="empty">No drafts yet — generate one above.</td></tr>';
+  } catch (e) {
+    $('socialPostStats').innerHTML = '<div class="empty">' + (e.message || 'Failed to load social posts') + '</div>';
+  }
+}
+
+function showSocialPostPreview(fullPost, postId) {
+  socialPostActiveId = postId;
+  socialPostFullText = fullPost || '';
+  const box = $('socialPostPreview');
+  const actions = $('socialPostActions');
+  box.style.display = 'block';
+  box.textContent = socialPostFullText;
+  actions.style.display = 'flex';
+}
+
 async function loadMenuSync() {
   const tenant = $('tenant') ? $('tenant').value : '';
   if (!tenant) {
@@ -800,6 +873,7 @@ async function loadAll(opts) {
       api('/reports/qr-scans?' + q).then((d) => { if (gen === loadGen) renderQrScans(d); }).catch(() => { if (gen === loadGen) renderQrScans(null); }),
       loadMenuSync().catch(() => {}),
       loadLoyalty().catch(() => {}),
+      loadSocialPosts().catch(() => {}),
       loadSocialInbox().catch(() => {}),
       loadSupportKb().catch(() => {}),
     ];
@@ -887,6 +961,100 @@ $('loyaltySaveBtn').addEventListener('click', async () => {
       msg.style.display = 'block';
       msg.textContent = e.message || 'Save failed';
     }
+  }
+});
+$('socialPostRefreshBtn').addEventListener('click', () => loadSocialPosts());
+$('socialPostDraftBtn').addEventListener('click', async () => {
+  const tenant = $('tenant').value;
+  const itemId = $('socialPostItem').value;
+  const msg = $('socialPostMsg');
+  if (!tenant || !itemId) { flash('Pick tenant + menu item first.'); return; }
+  try {
+    const data = await api('/social-posts/draft', {
+      method: 'POST',
+      body: JSON.stringify({ tenant_id: tenant, menu_item_id: itemId, platform: 'facebook' }),
+    });
+    if (msg) { msg.style.display = 'block'; msg.textContent = 'Draft ready · src=' + (data.post && data.post.srcTag) + ' · approve then copy to Facebook.'; }
+    showSocialPostPreview(data.fullPost, data.post && data.post.id);
+    await loadSocialPosts();
+  } catch (e) {
+    if (msg) { msg.style.display = 'block'; msg.textContent = e.message || 'Draft failed'; }
+  }
+});
+$('socialPostApproveBtn').addEventListener('click', async () => {
+  const tenant = $('tenant').value;
+  if (!tenant || !socialPostActiveId) return;
+  try {
+    const data = await api('/social-posts/' + socialPostActiveId + '/approve', {
+      method: 'POST',
+      body: JSON.stringify({ tenant_id: tenant }),
+    });
+    showSocialPostPreview(data.fullPost, data.post.id);
+    $('socialPostMsg').style.display = 'block';
+    $('socialPostMsg').textContent = 'Approved — copy into Facebook, then Mark posted.';
+    await loadSocialPosts();
+  } catch (e) {
+    $('socialPostMsg').style.display = 'block';
+    $('socialPostMsg').textContent = e.message || 'Approve failed';
+  }
+});
+$('socialPostCopyBtn').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(socialPostFullText);
+    $('socialPostMsg').style.display = 'block';
+    $('socialPostMsg').textContent = 'Copied to clipboard.';
+  } catch {
+    $('socialPostMsg').style.display = 'block';
+    $('socialPostMsg').textContent = 'Copy failed — select text in the preview box.';
+  }
+});
+$('socialPostMarkBtn').addEventListener('click', async () => {
+  const tenant = $('tenant').value;
+  if (!tenant || !socialPostActiveId) return;
+  try {
+    await api('/social-posts/' + socialPostActiveId + '/mark-posted', {
+      method: 'POST',
+      body: JSON.stringify({ tenant_id: tenant }),
+    });
+    $('socialPostMsg').style.display = 'block';
+    $('socialPostMsg').textContent = 'Marked posted. Measure clicks/orders for 48h via Performance.';
+    await loadSocialPosts();
+  } catch (e) {
+    $('socialPostMsg').style.display = 'block';
+    $('socialPostMsg').textContent = e.message || 'Mark posted failed';
+  }
+});
+$('socialPostSkipBtn').addEventListener('click', async () => {
+  const tenant = $('tenant').value;
+  if (!tenant || !socialPostActiveId) return;
+  try {
+    await api('/social-posts/' + socialPostActiveId + '/skip', {
+      method: 'POST',
+      body: JSON.stringify({ tenant_id: tenant, reason: 'Skipped in dashboard' }),
+    });
+    socialPostActiveId = null;
+    $('socialPostPreview').style.display = 'none';
+    $('socialPostActions').style.display = 'none';
+    await loadSocialPosts();
+  } catch (e) {
+    $('socialPostMsg').style.display = 'block';
+    $('socialPostMsg').textContent = e.message || 'Skip failed';
+  }
+});
+$('socialPostPerfBtn').addEventListener('click', async () => {
+  const tenant = $('tenant').value;
+  if (!tenant) return;
+  try {
+    const data = await api('/social-posts/performance?tenant_id=' + encodeURIComponent(tenant));
+    const rows = data.posts || [];
+    $('socialPostRows').innerHTML = rows.length
+      ? rows.map((p) => '<tr><td>' + esc(p.menuItemName) + '</td><td>posted</td><td class="mono">' + esc(p.srcTag) + '</td><td class="num">' + p.clicks + '</td><td class="num">' + p.orders + '</td><td class="num">' + money(p.revenueCents) + '</td></tr>').join('')
+      : '<tr><td colspan="6" class="empty">No posted rows yet — mark a draft as posted first.</td></tr>';
+    $('socialPostMsg').style.display = 'block';
+    $('socialPostMsg').textContent = data.note || 'Performance refreshed.';
+  } catch (e) {
+    $('socialPostMsg').style.display = 'block';
+    $('socialPostMsg').textContent = e.message || 'Performance failed';
   }
 });
 document.addEventListener('visibilitychange', () => {

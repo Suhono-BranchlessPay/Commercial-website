@@ -15,3 +15,4 @@ export * from "./support";
 export * from "./metaCapi";
 export * from "./seo";
 export * from "./loyalty";
+export * from "./socialPosts";
