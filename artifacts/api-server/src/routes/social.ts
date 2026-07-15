@@ -25,6 +25,8 @@ import {
 import { parseMetaWebhookBody, verifyMetaSignature } from "../lib/socialWebhook";
 import {
   approveInboxRow,
+  autoDraftForRow,
+  backfillMetaComments,
   buildSocialHealth,
   draftReplyForRow,
   getInboxRow,
@@ -195,10 +197,22 @@ router.post("/webhooks/meta", async (req, res): Promise<void> => {
         externalMessageId: msg.externalMessageId,
         authorName: msg.authorName,
         body: msg.body,
-        raw: { pageId: msg.pageId ?? null, source: "meta_webhook" },
+        raw: {
+          pageId: msg.pageId ?? null,
+          authorId: msg.authorId ?? null,
+          source: "meta_webhook",
+        },
       });
-      if (row) ingested += 1;
-      else duplicates += 1;
+      if (row) {
+        ingested += 1;
+        // Auto-draft on arrival (still human-approve before send). Fire-and-forget
+        // so Meta gets a fast 200 and does not retry; failures only log.
+        autoDraftForRow(row).catch((err) => {
+          req.log?.warn({ err, inboxId: row.id }, "Social auto-draft failed");
+        });
+      } else {
+        duplicates += 1;
+      }
     }
 
     // Always 200 quickly — Meta retries aggressively on non-2xx/slow responses.
@@ -323,6 +337,35 @@ router.post("/inbox/:id/draft", async (req, res): Promise<void> => {
   } catch (err) {
     req.log?.error({ err }, "Social draft failed");
     res.status(500).json({ error: "Failed to draft reply" });
+  }
+});
+
+/**
+ * Backfill recent Page comments the webhook missed (older posts / before the
+ * subscription). Read-only against Meta; new rows are auto-drafted. Never sends.
+ */
+router.post("/backfill", async (req, res): Promise<void> => {
+  try {
+    const tenantId = scopedTenantOrRespond(req, res);
+    if (tenantId === undefined) return;
+    if (!tenantId) {
+      res.status(400).json({ error: "tenant_id is required for backfill" });
+      return;
+    }
+    const body = (req.body ?? {}) as { post_limit?: number; comment_limit?: number };
+    const result = await backfillMetaComments({
+      tenantId,
+      postLimit: typeof body.post_limit === "number" ? body.post_limit : undefined,
+      commentLimit: typeof body.comment_limit === "number" ? body.comment_limit : undefined,
+    });
+    if (!result.ok) {
+      res.status(502).json(result);
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    req.log?.error({ err }, "Social backfill failed");
+    res.status(500).json({ error: "Failed to backfill comments" });
   }
 });
 

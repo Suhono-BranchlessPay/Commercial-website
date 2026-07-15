@@ -30,11 +30,30 @@ import { buildDraftReply, buildEscalationNote } from "./socialDraft";
 import {
   getBrandVoiceHint,
   getMetaPageAccessToken,
+  isSocialAutoDraftEnabled,
   isSocialKillSwitchOn,
   isSocialSendGloballyEnabled,
 } from "./socialConfig";
-import { replyToMetaComment, sendMetaMessengerMessage } from "../integrations/metaGraph";
+import {
+  fetchRecentPageComments,
+  replyToMetaComment,
+  sendMetaMessengerMessage,
+} from "../integrations/metaGraph";
 import { findTenantById } from "./tenant";
+
+/**
+ * Normalize inbound text to valid UTF-8 (NFC) and drop already-corrupted
+ * replacement characters (U+FFFD) + control chars. Emoji survive intact.
+ * Prevents broken "�" glyphs from persisting in the inbox.
+ */
+export function sanitizeInboundText(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string") return null;
+  let s = raw.normalize("NFC");
+  s = s.replace(/\uFFFD/g, "");
+  s = s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
+  s = s.trim();
+  return s.length ? s : null;
+}
 
 export type CreateInboxInput = {
   tenantId: string;
@@ -77,7 +96,9 @@ async function writeAudit(input: {
 export async function ingestInboundMessage(
   input: CreateInboxInput,
 ): Promise<SocialInboxRow | null> {
-  const { classification, riskFlags } = classifySocialMessage(input.body);
+  const body = sanitizeInboundText(input.body);
+  const authorName = sanitizeInboundText(input.authorName);
+  const { classification, riskFlags } = classifySocialMessage(body);
 
   const inserted = await db
     .insert(socialInboxTable)
@@ -88,8 +109,8 @@ export async function ingestInboundMessage(
       externalThreadId: input.externalThreadId ?? null,
       externalMessageId: input.externalMessageId ?? null,
       direction: "in",
-      authorName: input.authorName ?? null,
-      body: input.body ?? null,
+      authorName,
+      body,
       classification,
       status: "new",
       riskFlags,
@@ -340,6 +361,116 @@ export async function draftReplyForRow(
     note: isComplaint
       ? "Complaint drafted for review only — hard rule forbids auto-sending complaint replies. Alert the owner."
       : null,
+  };
+}
+
+/**
+ * Auto-draft a freshly-ingested inbound row (webhook or backfill). Still
+ * human-approve before anything is sent — this only fills draftReply so the
+ * inbox is not full of "No draft yet". Guardrails inside draftReplyForRow
+ * still skip peer/spam and block allergy_health. Safe to fire-and-forget.
+ */
+export async function autoDraftForRow(row: SocialInboxRow): Promise<void> {
+  if (!isSocialAutoDraftEnabled()) return;
+  if (row.direction !== "in") return;
+  if (row.status !== "new") return; // already drafted/handled
+  let tenantName = "the restaurant";
+  try {
+    const tenant = await findTenantById(row.tenantId);
+    if (tenant?.name) tenantName = tenant.name;
+  } catch {
+    /* non-fatal — draft still works with a generic name */
+  }
+  await draftReplyForRow(row.id, tenantName, "auto-draft");
+}
+
+export type BackfillResult = {
+  ok: boolean;
+  fetched: number;
+  ingested: number;
+  duplicates: number;
+  drafted: number;
+  error?: string;
+};
+
+/**
+ * Pull recent Page comments via the Graph API and file any that the webhook
+ * missed (e.g. comments posted before the webhook subscription, or on older
+ * posts). Idempotent — existing rows are skipped by the unique (tenant,
+ * platform, external_message_id) constraint. New rows are auto-drafted.
+ *
+ * Read-only against Meta (GET only) — never sends a reply.
+ */
+export async function backfillMetaComments(input: {
+  tenantId: string;
+  postLimit?: number;
+  commentLimit?: number;
+}): Promise<BackfillResult> {
+  const token = getMetaPageAccessToken(input.tenantId);
+  if (!token) {
+    return {
+      ok: false,
+      fetched: 0,
+      ingested: 0,
+      duplicates: 0,
+      drafted: 0,
+      error: "META_PAGE_ACCESS_TOKEN not configured for this tenant",
+    };
+  }
+
+  const fetched = await fetchRecentPageComments(token, {
+    postLimit: input.postLimit,
+    commentLimit: input.commentLimit,
+  });
+  if (!fetched.ok) {
+    return {
+      ok: false,
+      fetched: 0,
+      ingested: 0,
+      duplicates: 0,
+      drafted: 0,
+      error: fetched.error,
+    };
+  }
+
+  let ingested = 0;
+  let duplicates = 0;
+  let drafted = 0;
+  for (const c of fetched.comments) {
+    const row = await ingestInboundMessage({
+      tenantId: input.tenantId,
+      platform: "facebook",
+      kind: "comment",
+      externalThreadId: c.postId,
+      externalMessageId: c.commentId,
+      authorName: c.authorName,
+      body: c.message,
+      raw: {
+        pageId: fetched.pageId,
+        authorId: c.authorId,
+        createdTime: c.createdTime,
+        source: "meta_backfill",
+      },
+    });
+    if (row) {
+      ingested += 1;
+      try {
+        await autoDraftForRow(row);
+        drafted += 1;
+      } catch {
+        /* non-fatal — leave as new for manual draft */
+      }
+    } else {
+      duplicates += 1;
+    }
+  }
+
+  return {
+    ok: true,
+    fetched: fetched.comments.length,
+    ingested,
+    duplicates,
+    drafted,
   };
 }
 

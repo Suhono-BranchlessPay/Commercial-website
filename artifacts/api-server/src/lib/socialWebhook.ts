@@ -15,6 +15,8 @@ export type ParsedInboundMessage = {
   pageId: string | undefined;
   externalThreadId: string | null;
   externalMessageId: string | null;
+  /** Author's Meta user/page id — used to skip the Page's own posts/comments. */
+  authorId: string | null;
   authorName: string | null;
   body: string | null;
 };
@@ -55,12 +57,18 @@ export function parseMetaWebhookBody(body: unknown): ParsedInboundMessage[] {
       const message = asRecord(msg.message);
       const text = str(message.text);
       if (!text && !message.mid) continue;
+      // Skip the Page's own outgoing DMs (Meta echoes them back to the webhook).
+      if (message.is_echo === true) continue;
+      const senderId = str(sender.id);
+      // Never treat the Page replying to itself as an inbound message.
+      if (senderId && pageId && senderId === pageId) continue;
       results.push({
         platform,
         kind: "message",
         pageId,
-        externalThreadId: str(sender.id),
+        externalThreadId: senderId,
         externalMessageId: str(message.mid),
+        authorId: senderId,
         authorName: null, // Messenger events don't include a display name; left null honestly.
         body: text,
       });
@@ -73,13 +81,30 @@ export function parseMetaWebhookBody(body: unknown): ParsedInboundMessage[] {
       const text = str(value.message) ?? str(value.text);
       const commentId = str(value.comment_id);
       const postId = str(value.post_id) ?? str(value.parent_id);
-      if (!text && !commentId) continue;
+      const item = str(value.item);
+      const verb = str(value.verb);
+      const fromId = str(from.id);
+
+      // Only real comments are actionable. A feed change for the Page's own
+      // post/status/photo/share/like/reaction is NOT a comment to reply to —
+      // this is what made "Beef Bento Box" (our own post) show up as a comment.
+      if (item && item !== "comment") continue;
+      // A genuine comment always carries a comment_id. Without one it's a
+      // post-level or non-comment event — skip it.
+      if (!commentId) continue;
+      // Deletions/hides are not repliable.
+      if (verb === "remove" || verb === "hide") continue;
+      // The Page commenting on its own post — never reply to ourselves.
+      if (fromId && pageId && fromId === pageId) continue;
+      if (!text) continue;
+
       results.push({
         platform,
         kind: "comment",
         pageId,
         externalThreadId: postId,
         externalMessageId: commentId,
+        authorId: fromId,
         authorName: str(from.name),
         body: text,
       });

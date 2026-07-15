@@ -23,6 +23,17 @@ export function isSocialSendGloballyEnabled(): boolean {
   return process.env.SOCIAL_SEND_ENABLED?.trim() === "1";
 }
 
+/**
+ * Auto-draft every inbound comment on arrival (still human-approve before send).
+ * ON by default so the inbox is never full of "No draft yet"; set
+ * SOCIAL_AUTO_DRAFT_ENABLED=0 to fall back to manual "Draft" clicks only.
+ * Drafting still routes through the gateway guardrails (peer/allergy/spam skip).
+ */
+export function isSocialAutoDraftEnabled(): boolean {
+  const v = process.env.SOCIAL_AUTO_DRAFT_ENABLED?.trim();
+  return v !== "0" && v !== "false";
+}
+
 /** TENANT_{ID}_META_PAGE_ACCESS_TOKEN, else global META_PAGE_ACCESS_TOKEN. */
 export function getMetaPageAccessToken(tenantId: string): string | undefined {
   return tenantSecret(tenantId, "META_PAGE_ACCESS_TOKEN");

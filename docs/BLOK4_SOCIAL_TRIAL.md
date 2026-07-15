@@ -19,6 +19,16 @@ implemented — see "Next" at the bottom.
 | Missing Meta id → fail honestly, never guess. | If the row's `external_message_id` (comment id) or `external_thread_id` (Messenger PSID) needed for its kind of reply is missing, `/send` returns `400` and writes a `send_failed` audit row — it never falls back to a different id or skips the check. |
 | Audit log of everything sent. | Every approve / edit / skip / block / kill_switch / send / **send_failed** writes a `social_reply_audit` row (`before_body`, `after_body`, `actor`, `meta`). |
 
+## Inbox improvements (15 Jul) — auto-draft, self-skip, backfill, encoding
+
+| Change | Behavior |
+| --- | --- |
+| **Auto-draft on arrival** | Every ingested inbound comment is auto-drafted immediately (webhook fires `autoDraftForRow` fire-and-forget) so the inbox is not full of "No draft yet". **Still human-approve before send** — guardrails inside `draftReplyForRow` still skip peer/spam and block allergy_health. Toggle with `SOCIAL_AUTO_DRAFT_ENABLED=0` (default ON). |
+| **Skip the Page's own posts/comments** | `parseMetaWebhookBody` now drops any change where `from.id === entry.id` (Page id) and any feed change whose `item !== "comment"` (a `status`/`photo`/`reaction`/`like` — e.g. our own "Beef Bento Box" post) or with no `comment_id` / `verb` = `remove`/`hide`. Messenger echoes (`message.is_echo`) are dropped too. The restaurant never replies to itself. |
+| **Backfill old comments** | `POST /api/social/backfill?tenant_id=samurai` (dashboard/internal auth) pulls recent Page posts + comments via the Graph API (`GET /me/posts?fields=…comments{…}`) and files any the webhook missed (older posts / before the subscription). Idempotent (unique constraint), read-only against Meta, new rows auto-drafted. Optional body: `{ "post_limit": 25, "comment_limit": 50 }`. |
+| **UTF-8 / emoji (`�`)** | Inbound text is normalized (`NFC`) and stripped of replacement chars + control chars on ingest (`sanitizeInboundText`). The webhook already reads raw bytes → UTF-8. Re-running **backfill** re-fetches clean UTF-8 from Graph, repairing rows that were stored corrupted earlier. |
+| **Personal drafts (not templates)** | The draft path already sends the customer's actual comment text (`message_text: row.body`) to the gateway prompt, so replies reference what the customer said. Auto-draft uses the same path. |
+
 ## What is STUB vs REAL right now
 
 **Real (working today):**
