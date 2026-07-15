@@ -25,7 +25,7 @@ any auto-post risk. Meta app may still be Unpublished — that does not block St
 Live menu name is **Steak Bento** (not “Beef Bento”). Use that item.
 
 1. Verify redirect (already OK):  
-   `https://samurairesto.com/r/samurai?src=fb-steakbento-YYYYMMDD` → menu + `src` logged
+   `https://samurairesto.com/r/samurai?src=fb-steakbento-YYYYMMDD&item=<menuItemId>` → `/menu?src=…&item=…` + scroll/open that dish
 2. Dashboard → tenant **samurai** → Social posts → pick Steak Bento → **Generate draft**
 3. **Approve** → **Copy post + link** → paste into Facebook Page (attach photo if POS has none)
 4. **Mark posted**
@@ -71,9 +71,10 @@ psql "$DATABASE_URL" -f scripts/migrate-social-posts-stage1.sql
 ## Attribution
 
 ```
-https://{domain}/r/{tenantSlug}?src=fb-{itemslug}-{yyyymmdd}
+https://{domain}/r/{tenantSlug}?src=fb-{itemslug}-{yyyymmdd}&item={menuItemId}
 ```
 
+- `item=` is forwarded by `/r/:slug` onto `/menu?src=…&item=…` so the storefront scrolls to and opens that dish (closed-loop promo).
 - Clicks (ROI): human `qr_scans` only — excludes `facebookexternalhit`, `curl`, and other scrapers (`qrScanBotFilter.ts`)
 - Bot clicks still logged + shown as `botClicks` for transparency (link-preview crawlers)
 - Orders: `orders.source_detail.src` (paid only)

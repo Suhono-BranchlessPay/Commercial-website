@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   useGetMenuCategories,
   useGetMenuItems,
@@ -12,10 +12,34 @@ import { Button } from "@/components/ui/button";
 import { useCart } from "@/lib/cart";
 import { trackAnalyticsEvent } from "@/lib/analytics";
 
-function MenuListRow({ item }: { item: MenuItem }) {
+function readDeepLinkItemId(): string | null {
+  try {
+    const raw = new URLSearchParams(window.location.search).get("item");
+    const s = (raw || "").trim().slice(0, 128);
+    if (!s || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(s)) return null;
+    return s;
+  } catch {
+    return null;
+  }
+}
+
+function MenuListRow({
+  item,
+  highlighted = false,
+}: {
+  item: MenuItem;
+  highlighted?: boolean;
+}) {
   const { addItem } = useCart();
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center gap-4 py-5 border-b border-border">
+    <div
+      id={`menu-item-${item.id}`}
+      className={`flex flex-col sm:flex-row sm:items-center gap-4 py-5 border-b scroll-mt-28 ${
+        highlighted
+          ? "border-primary bg-primary/5 px-3 -mx-3 rounded-lg"
+          : "border-border"
+      }`}
+    >
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline justify-between gap-3">
           <h3 className="font-serif text-xl text-foreground">{item.name}</h3>
@@ -40,12 +64,28 @@ function MenuListRow({ item }: { item: MenuItem }) {
   );
 }
 
-function MenuLargeCard({ item }: { item: MenuItem }) {
-  return <MenuItemCard item={item} />;
+function MenuLargeCard({
+  item,
+  defaultOpen = false,
+  highlighted = false,
+}: {
+  item: MenuItem;
+  defaultOpen?: boolean;
+  highlighted?: boolean;
+}) {
+  return (
+    <MenuItemCard
+      item={item}
+      defaultOpen={defaultOpen}
+      highlighted={highlighted}
+    />
+  );
 }
 
 export default function Menu() {
   const { brandName, cityLine, storefront, tenant } = useTenant();
+  const deepLinkItemId = useMemo(() => readDeepLinkItemId(), []);
+
   useEffect(() => {
     const loc = cityLine ? ` | ${cityLine}` : "";
     document.title = `${storefront.menuPageTitle} · ${brandName}${loc}`;
@@ -54,10 +94,15 @@ export default function Menu() {
   useEffect(() => {
     const tid = tenant?.tenantId;
     if (!tid) return;
-    trackAnalyticsEvent({ tenantId: tid, eventType: "menu_view" });
-  }, [tenant?.tenantId]);
+    trackAnalyticsEvent({
+      tenantId: tid,
+      eventType: "menu_view",
+      itemId: deepLinkItemId,
+    });
+  }, [tenant?.tenantId, deepLinkItemId]);
 
   const [activeCategory, setActiveCategory] = useState<string>("all");
+  const [deepLinkOpened, setDeepLinkOpened] = useState(false);
   const { data: categories, isLoading: loadingCategories } = useGetMenuCategories();
   const itemsParams =
     activeCategory !== "all" ? { category: activeCategory } : undefined;
@@ -65,6 +110,32 @@ export default function Menu() {
   const sortedCategories = categories
     ? [...categories].sort((a, b) => a.sortOrder - b.sortOrder)
     : [];
+
+  // Social/QR `?item=` → keep All Items, scroll + open add dialog once.
+  useEffect(() => {
+    if (!deepLinkItemId || loadingItems || !items?.length || deepLinkOpened) {
+      return;
+    }
+    const found = (items as MenuItem[]).find((i) => i.id === deepLinkItemId);
+    if (!found) return;
+    if (activeCategory !== "all") {
+      setActiveCategory("all");
+      return;
+    }
+    setDeepLinkOpened(true);
+    const el = document.getElementById(`menu-item-${deepLinkItemId}`);
+    if (el) {
+      requestAnimationFrame(() => {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    }
+  }, [
+    deepLinkItemId,
+    loadingItems,
+    items,
+    deepLinkOpened,
+    activeCategory,
+  ]);
 
   const variant = storefront.menuVariant;
   const gridClass =
@@ -162,18 +233,33 @@ export default function Menu() {
                 variant === "menu-list" ? (
                   <div className={gridClass}>
                     {(items as MenuItem[]).map((item) => (
-                      <MenuListRow key={item.id} item={item} />
+                      <MenuListRow
+                        key={item.id}
+                        item={item}
+                        highlighted={item.id === deepLinkItemId}
+                      />
                     ))}
                   </div>
                 ) : (
                   <div className={gridClass}>
-                    {(items as MenuItem[]).map((item) =>
-                      variant === "menu-cards-large" ? (
-                        <MenuLargeCard key={item.id} item={item} />
+                    {(items as MenuItem[]).map((item) => {
+                      const isTarget = item.id === deepLinkItemId;
+                      return variant === "menu-cards-large" ? (
+                        <MenuLargeCard
+                          key={item.id}
+                          item={item}
+                          defaultOpen={isTarget && deepLinkOpened}
+                          highlighted={isTarget}
+                        />
                       ) : (
-                        <MenuItemCard key={item.id} item={item} />
-                      ),
-                    )}
+                        <MenuItemCard
+                          key={item.id}
+                          item={item}
+                          defaultOpen={isTarget && deepLinkOpened}
+                          highlighted={isTarget}
+                        />
+                      );
+                    })}
                   </div>
                 )
               ) : (

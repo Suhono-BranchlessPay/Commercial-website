@@ -261,6 +261,7 @@ export async function createSocialPostDraft(input: {
     domain: tenant.domain,
     tenantSlug: tenant.slug,
     srcTag,
+    menuItemId: item.id,
   });
 
   const brandVoice =
