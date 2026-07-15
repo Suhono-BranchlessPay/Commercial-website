@@ -68,6 +68,105 @@ export async function replyToMetaComment(
   }
 }
 
+export type BackfilledComment = {
+  postId: string | null;
+  commentId: string;
+  authorId: string | null;
+  authorName: string | null;
+  message: string | null;
+  createdTime: string | null;
+};
+
+export type FetchCommentsResult =
+  | { ok: true; pageId: string | null; comments: BackfilledComment[] }
+  | { ok: false; error: string };
+
+function asRec(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+}
+function asArr(v: unknown): unknown[] {
+  return Array.isArray(v) ? v : [];
+}
+function s(v: unknown): string | null {
+  return typeof v === "string" && v.trim() ? v : null;
+}
+
+/**
+ * Read-only backfill: fetch recent Page posts + their comments so comments the
+ * webhook never received (older posts, or before the subscription) can be filed
+ * into the inbox. GET only — never sends. The Page's own comments are excluded
+ * by comparing each comment author id to the Page id.
+ *
+ * `fetch().text()` decodes Graph's UTF-8 JSON correctly, so emoji come back
+ * clean (this also repairs "�" from earlier corrupted ingests on re-file).
+ */
+export async function fetchRecentPageComments(
+  accessToken: string,
+  opts?: { postLimit?: number; commentLimit?: number },
+): Promise<FetchCommentsResult> {
+  const version = getMetaGraphApiVersion();
+  const postLimit = Math.min(Math.max(opts?.postLimit ?? 25, 1), 100);
+  const commentLimit = Math.min(Math.max(opts?.commentLimit ?? 50, 1), 100);
+
+  try {
+    // The Page id lets us drop the Page's own comments during backfill.
+    let pageId: string | null = null;
+    try {
+      const meRes = await fetch(
+        `https://graph.facebook.com/${version}/me?fields=id&access_token=${encodeURIComponent(accessToken)}`,
+      );
+      const meText = await meRes.text();
+      if (meRes.ok) pageId = s(asRec(JSON.parse(meText)).id);
+    } catch {
+      /* non-fatal — without page id we simply keep all comments */
+    }
+
+    const fields = `id,message,created_time,comments.limit(${commentLimit}){id,message,from,created_time}`;
+    const url =
+      `https://graph.facebook.com/${version}/me/posts` +
+      `?fields=${encodeURIComponent(fields)}&limit=${postLimit}` +
+      `&access_token=${encodeURIComponent(accessToken)}`;
+
+    const res = await fetch(url);
+    const text = await res.text();
+    if (!res.ok) {
+      return { ok: false, error: metaErrorMessage(res.status, text) };
+    }
+
+    const json = asRec(JSON.parse(text));
+    const comments: BackfilledComment[] = [];
+    for (const postRaw of asArr(json.data)) {
+      const post = asRec(postRaw);
+      const postId = s(post.id);
+      for (const cRaw of asArr(asRec(post.comments).data)) {
+        const c = asRec(cRaw);
+        const commentId = s(c.id);
+        if (!commentId) continue;
+        const from = asRec(c.from);
+        const authorId = s(from.id);
+        if (pageId && authorId && authorId === pageId) continue; // our own comment
+        comments.push({
+          postId,
+          commentId,
+          authorId,
+          authorName: s(from.name),
+          message: s(c.message),
+          createdTime: s(c.created_time),
+        });
+      }
+    }
+    return { ok: true, pageId, comments };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Network error calling Meta Graph API (comment backfill)",
+    };
+  }
+}
+
 /**
  * Send a Messenger (or IG DM) reply to a PSID.
  * POST /me/messages  (recipient + message, access_token as query param)
