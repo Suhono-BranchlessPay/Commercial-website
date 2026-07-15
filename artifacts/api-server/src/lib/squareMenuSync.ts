@@ -165,6 +165,90 @@ async function squareGet<T>(creds: SquareCreds, path: string): Promise<T> {
   return text ? (JSON.parse(text) as T) : ({} as T);
 }
 
+async function squarePost<T>(
+  creds: SquareCreds,
+  path: string,
+  body: unknown,
+): Promise<T> {
+  const res = await fetch(`${creds.baseUrl}${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${creds.accessToken}`,
+      "Square-Version": SQUARE_API_VERSION,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Square catalog API error ${res.status}: ${text}`);
+  }
+  return text ? (JSON.parse(text) as T) : ({} as T);
+}
+
+interface SquareSearchItemsResponse {
+  items?: SquareCatalogItem[];
+  cursor?: string;
+}
+
+interface SquareBatchRetrieveResponse {
+  objects?: SquareCatalogObject[];
+}
+
+/**
+ * Build a reliable itemId -> image_ids[] map via SearchCatalogItems.
+ *
+ * ListCatalog (/v2/catalog/list) can lag for recently-attached images: the
+ * item's `image_ids` (and the IMAGE object) may be missing there even though
+ * the photo is live in Square POS. SearchCatalogItems reflects images
+ * immediately, so we use it as the source of truth for item→image links.
+ */
+async function fetchImageIdsByItem(
+  creds: SquareCreds,
+): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>();
+  let cursor: string | undefined;
+  let pages = 0;
+  do {
+    const body: Record<string, unknown> = { limit: 100 };
+    if (cursor) body.cursor = cursor;
+    const page = await squarePost<SquareSearchItemsResponse>(
+      creds,
+      "/v2/catalog/search-catalog-items",
+      body,
+    );
+    for (const item of page.items ?? []) {
+      const ids = item.item_data?.image_ids;
+      if (item.id && Array.isArray(ids) && ids.length > 0) {
+        map.set(item.id, ids);
+      }
+    }
+    cursor = page.cursor;
+    pages += 1;
+  } while (cursor && pages < 200);
+  return map;
+}
+
+/** Fetch IMAGE catalog objects by id (chunked) — used for ids missing from list. */
+async function batchRetrieveImages(
+  creds: SquareCreds,
+  ids: string[],
+): Promise<SquareCatalogImage[]> {
+  const out: SquareCatalogImage[] = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const resp = await squarePost<SquareBatchRetrieveResponse>(
+      creds,
+      "/v2/catalog/batch-retrieve-catalog-objects",
+      { object_ids: chunk, include_related_objects: false },
+    );
+    for (const obj of resp.objects ?? []) {
+      if (obj.type === "IMAGE") out.push(obj as SquareCatalogImage);
+    }
+  }
+  return out;
+}
+
 async function fetchAllCatalogObjects(
   creds: SquareCreds,
 ): Promise<SquareCatalogObject[]> {
@@ -482,6 +566,32 @@ export async function syncSquareMenuForTenant(input: {
       }
     }
 
+    // Reconcile item images. ListCatalog can omit image_ids / IMAGE objects for
+    // recently-attached photos, so use SearchCatalogItems (always fresh) as the
+    // source of truth for item→image links, then batch-retrieve any IMAGE
+    // objects that the list did not return. Best-effort: never fail the whole
+    // sync if the image endpoints error.
+    const imageIdsByItemId = new Map<string, string[]>();
+    try {
+      const searched = await fetchImageIdsByItem(creds);
+      for (const [itemId, ids] of searched) imageIdsByItemId.set(itemId, ids);
+
+      const referenced = new Set<string>();
+      for (const ids of imageIdsByItemId.values()) {
+        for (const id of ids) referenced.add(id);
+      }
+      for (const item of items) {
+        for (const id of item.item_data?.image_ids ?? []) referenced.add(id);
+      }
+      const missing = [...referenced].filter((id) => !imagesById.has(id));
+      if (missing.length > 0) {
+        const fetched = await batchRetrieveImages(creds, missing);
+        for (const img of fetched) imagesById.set(img.id, img);
+      }
+    } catch (imgErr) {
+      logger.warn({ err: imgErr, tenantId }, "Square image reconcile skipped");
+    }
+
     // Upsert categories first so menu_items.category (name) can reference them.
     let categoryCount = 0;
     for (const cat of categoriesById.values()) {
@@ -516,7 +626,8 @@ export async function syncSquareMenuForTenant(input: {
         ? categoriesById.get(categoryId)?.category_data?.name?.trim()
         : undefined;
 
-      const imageId = item.item_data.image_ids?.[0];
+      const imageId =
+        imageIdsByItemId.get(item.id)?.[0] ?? item.item_data.image_ids?.[0];
       const imageUrl = imageId ? imagesById.get(imageId)?.image_data?.url ?? null : null;
 
       const modifiers = buildModifierSummary(item, modifierListsById);
