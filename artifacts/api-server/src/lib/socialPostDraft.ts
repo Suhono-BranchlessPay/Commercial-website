@@ -76,13 +76,26 @@ export function buildSrcTag(input: {
   return `${plat}-${slugifyItemName(input.itemName)}-${y}${m}${day}`;
 }
 
+/** Safe menu item id for query params (Orderly text PKs / UUIDs). */
+export function sanitizeMenuItemQueryId(raw: unknown): string | null {
+  const s = String(raw ?? "").trim().slice(0, 128);
+  if (!s || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(s)) return null;
+  return s;
+}
+
 export function buildTrackedUrl(input: {
   domain: string;
   tenantSlug: string;
   srcTag: string;
+  /** When set, QR/landing opens this menu item (closed-loop promo). */
+  menuItemId?: string | null;
 }): string {
   const host = input.domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
-  return `https://${host}/r/${encodeURIComponent(input.tenantSlug)}?src=${encodeURIComponent(input.srcTag)}`;
+  const params = new URLSearchParams();
+  params.set("src", input.srcTag);
+  const itemId = sanitizeMenuItemQueryId(input.menuItemId);
+  if (itemId) params.set("item", itemId);
+  return `https://${host}/r/${encodeURIComponent(input.tenantSlug)}?${params.toString()}`;
 }
 
 export function buildSocialPostDraft(input: {

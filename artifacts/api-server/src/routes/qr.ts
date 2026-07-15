@@ -1,7 +1,8 @@
 /**
  * Dynamic QR redirect — GET /r/:tenantSlug
  * Print once; change landing URL via tenant config (domain + order path) without reprinting.
- * Optional ?src= (e.g. flyer|table|window) is logged and forwarded to the landing URL.
+ * Optional ?src= (e.g. flyer|table|window) and ?item= (menu item id) are
+ * logged and forwarded to the landing URL.
  */
 import { Router, type Request, type Response } from "express";
 import { createHash } from "crypto";
@@ -33,12 +34,22 @@ function sanitizeSrc(raw: unknown): string | null {
   return s.toLowerCase();
 }
 
+const ITEM_MAX = 128;
+const ITEM_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/;
+
+function sanitizeItemId(raw: unknown): string | null {
+  const s = String(raw ?? "").trim().slice(0, ITEM_MAX);
+  if (!s || !ITEM_RE.test(s)) return null;
+  return s;
+}
+
 function orderLandingUrl(
   tenant: {
     domain: string;
     theme: Record<string, unknown> | null;
   },
   src: string | null,
+  itemId: string | null,
 ): string {
   const theme = tenant.theme || {};
   const custom =
@@ -56,14 +67,20 @@ function orderLandingUrl(
     const normalizedPath = path.startsWith("/") ? path : `/${path}`;
     base = `https://${host}${normalizedPath}`;
   }
-  if (!src) return base;
+  if (!src && !itemId) return base;
   try {
     const u = new URL(base);
-    if (!u.searchParams.has("src")) u.searchParams.set("src", src);
+    if (src && !u.searchParams.has("src")) u.searchParams.set("src", src);
+    if (itemId && !u.searchParams.has("item")) {
+      u.searchParams.set("item", itemId);
+    }
     return u.toString();
   } catch {
+    const parts: string[] = [];
+    if (src) parts.push(`src=${encodeURIComponent(src)}`);
+    if (itemId) parts.push(`item=${encodeURIComponent(itemId)}`);
     const sep = base.includes("?") ? "&" : "?";
-    return `${base}${sep}src=${encodeURIComponent(src)}`;
+    return `${base}${sep}${parts.join("&")}`;
   }
 }
 
@@ -80,6 +97,7 @@ router.get(
 
     const slug = SLUG_ALIASES[raw] || raw;
     const src = sanitizeSrc(req.query.src);
+    const itemId = sanitizeItemId(req.query.item);
 
     try {
       const rows = await db
@@ -100,6 +118,7 @@ router.get(
           theme: (tenant.theme as Record<string, unknown>) || {},
         },
         src,
+        itemId,
       );
 
       // Fire-and-forget scan log — never block the diner.
@@ -121,7 +140,11 @@ router.get(
               0,
               500,
             ) || null,
-          meta: { path_slug: raw, src: src ?? null },
+          meta: {
+            path_slug: raw,
+            src: src ?? null,
+            item: itemId ?? null,
+          },
         })
         .catch((err: unknown) => {
           logger.warn({ err, slug }, "qr_scans insert failed");

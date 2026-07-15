@@ -3,7 +3,7 @@ import { useCart } from "@/lib/cart";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useTenant } from "@/lib/tenant";
@@ -68,13 +68,28 @@ const BADGE_STYLES: Record<BadgeType, { label: string; className: string }> = {
   },
 };
 
-export function MenuItemCard({ item, showAdd = true }: { item: MenuItem; showAdd?: boolean }) {
+export function MenuItemCard({
+  item,
+  showAdd = true,
+  defaultOpen = false,
+  highlighted = false,
+}: {
+  item: MenuItem;
+  showAdd?: boolean;
+  /** Open add dialog on mount (deep-link from social/QR `?item=`). */
+  defaultOpen?: boolean;
+  highlighted?: boolean;
+}) {
   const { addItem } = useCart();
   const { brandShort } = useTenant();
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [instructions, setInstructions] = useState("");
   const [quantity, setQuantity] = useState(1);
+
+  useEffect(() => {
+    if (defaultOpen && item.available) setIsDialogOpen(true);
+  }, [defaultOpen, item.available]);
 
   const matchedImage = item.imageUrl || IMAGE_MAP[item.name];
   const badge = BADGES[item.name];
@@ -93,7 +108,14 @@ export function MenuItemCard({ item, showAdd = true }: { item: MenuItem; showAdd
 
   return (
     <>
-      <div className="bg-card border border-border rounded-xl overflow-hidden transition-all duration-300 hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5 flex flex-col h-full group">
+      <div
+        id={`menu-item-${item.id}`}
+        className={`bg-card border rounded-xl overflow-hidden transition-all duration-300 hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5 flex flex-col h-full group scroll-mt-28 ${
+          highlighted
+            ? "border-primary ring-2 ring-primary/40 shadow-lg shadow-primary/10"
+            : "border-border"
+        }`}
+      >
         <div className="aspect-[4/3] w-full overflow-hidden bg-muted relative flex items-center justify-center">
           {matchedImage ? (
             <img
