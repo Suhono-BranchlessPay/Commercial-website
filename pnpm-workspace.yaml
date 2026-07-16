@@ -36,11 +36,23 @@ minimumReleaseAgeExclude:
   - '@replit/*'
   - stripe-replit-sync
 
+# pnpm v10 and earlier read this allowlist.
 onlyBuiltDependencies:
   - '@swc/core'
   - esbuild
   - msw
   - unrs-resolver
+
+# pnpm v11 removed onlyBuiltDependencies and replaced it with allowBuilds.
+# EAS Build workers run pnpm 11.9.0, where a missing allowBuilds entry for a
+# dependency with a build script is a HARD error (strictDepBuilds defaults to
+# true), which broke the iOS/Android cloud build at the "Install dependencies"
+# phase. Keep both blocks so every pnpm version honors the same allowlist.
+allowBuilds:
+  '@swc/core': true
+  esbuild: true
+  msw: true
+  unrs-resolver: true
 
 overrides:
   '@esbuild-kit/esm-loader': npm:tsx@^4.21.0
