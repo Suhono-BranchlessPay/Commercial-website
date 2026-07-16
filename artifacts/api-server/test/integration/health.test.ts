@@ -4,7 +4,7 @@
  */
 import express from "express";
 import request from "supertest";
-import { pool } from "@workspace/db";
+import { pool, endHealthPool } from "@workspace/db";
 import healthRouter from "../../src/routes/health";
 
 const RUN_DB = Boolean(process.env.TEST_DATABASE_URL);
@@ -15,6 +15,7 @@ d("health readiness (real DB)", () => {
   app.use(healthRouter);
 
   afterAll(async () => {
+    await endHealthPool();
     await pool.end();
   });
 

@@ -32,11 +32,9 @@ describe("health: GET /healthz (liveness)", () => {
   const app = express();
   app.use(healthRouter);
 
-  it("returns 200 without touching the DB", async () => {
+  it("returns 200 {status:'ok'} without touching the DB", async () => {
     const res = await request(app).get("/healthz");
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe("ok");
-    expect(typeof res.body.uptime_s).toBe("number");
-    expect(res.headers["cache-control"]).toBe("no-store");
+    expect(res.body).toEqual({ status: "ok" });
   });
 });

@@ -12,6 +12,7 @@ declare global {
 function isExemptPath(path: string): boolean {
   return (
     path === "/healthz" ||
+    path === "/readyz" ||
     path === "/version" ||
     path.startsWith("/webhooks/") ||
     path.startsWith("/bridge") ||
