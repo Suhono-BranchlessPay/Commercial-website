@@ -135,8 +135,20 @@ export function isBpAnchorConfigured(slug?: string): boolean {
   return Boolean(licenseKey(s));
 }
 
-/** Legacy SHA-256 of JSON payload (matches branchlesspay_core legacy_content_hash). */
-function legacyContentHash(payload: Record<string, unknown>): string {
+/**
+ * Refund anchors MUST carry a negative amount (Audit Shield continuity — the
+ * refund offsets the original positive order anchor). Exported so the invariant
+ * is unit-tested and cannot silently regress. Coerces non-finite to 0.
+ */
+export function negativeAnchorAmount(amount: unknown): number {
+  return -Math.abs(Number(amount) || 0);
+}
+
+/**
+ * Legacy SHA-256 of JSON payload (matches branchlesspay_core legacy_content_hash).
+ * Exported for unit tests (pure; deterministic over sorted keys).
+ */
+export function legacyContentHash(payload: Record<string, unknown>): string {
   const data = { ...payload };
   delete data.content_hash;
   const canonical = JSON.stringify(data, Object.keys(data).sort());
@@ -323,7 +335,7 @@ export async function anchorRefundedOrder(input: {
   if (!key) {
     return { ok: false, error: "BRANCHLESSPAY_LICENSE_KEY not configured" };
   }
-  const amount = -Math.abs(Number(input.amount) || 0);
+  const amount = negativeAnchorAmount(input.amount);
   const referenceId = `${input.orderId}:refund`;
   const payload: Record<string, unknown> = {
     event_type: "orderly_order_refunded",
