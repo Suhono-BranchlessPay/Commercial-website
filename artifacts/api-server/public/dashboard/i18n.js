@@ -73,6 +73,14 @@
     "lang.label": "Language",
     "lang.review_banner":
       "Some translations (Thai / Myanmar / Nepali / Arabic) need native-speaker review before relying on them with owners.",
+    "tab.overview": "Overview",
+    "tab.orders": "Orders",
+    "tab.anchor": "Anchor",
+    "tab.menu": "Menu & Sync",
+    "tab.customers": "Customers",
+    "tab.marketing": "Marketing",
+    "tab.growth": "Growth",
+    "tab.reports": "Reports",
   };
 
   /** Shallow copy + overrides helper */
@@ -133,6 +141,13 @@
       "lang.label": "Bahasa",
       "lang.review_banner":
         "Beberapa terjemahan (Thai / Myanmar / Nepal / Arab) perlu review penutur asli sebelum dipakai pemilik.",
+      "tab.overview": "Ringkasan",
+      "tab.orders": "Pesanan",
+      "tab.menu": "Menu & Sinkron",
+      "tab.customers": "Pelanggan",
+      "tab.marketing": "Pemasaran",
+      "tab.growth": "Pertumbuhan",
+      "tab.reports": "Laporan",
     }),
     es: pack({
       "gate.title": "Consola Orderly Foods",
@@ -178,6 +193,12 @@
       "lang.label": "Idioma",
       "lang.review_banner":
         "Algunas traducciones (tailandés / birmano / nepalí / árabe) necesitan revisión de hablantes nativos.",
+      "tab.overview": "Resumen",
+      "tab.orders": "Pedidos",
+      "tab.menu": "Menú y sync",
+      "tab.customers": "Clientes",
+      "tab.growth": "Crecimiento",
+      "tab.reports": "Informes",
     }),
     zh: pack({
       "gate.title": "Orderly Foods 控制台",
@@ -221,6 +242,13 @@
       "soon.title": "即将推出（如实 — 不编造）",
       "lang.label": "语言",
       "lang.review_banner": "部分翻译（泰语/缅甸语/尼泊尔语/阿拉伯语）需母语者审校后再给业主使用。",
+      "tab.overview": "总览",
+      "tab.orders": "订单",
+      "tab.menu": "菜单与同步",
+      "tab.customers": "客户",
+      "tab.marketing": "营销",
+      "tab.growth": "增长",
+      "tab.reports": "报表",
     }),
     vi: pack({
       "gate.title": "Bảng điều khiển Orderly Foods",
