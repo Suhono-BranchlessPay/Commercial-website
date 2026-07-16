@@ -1,0 +1,73 @@
+name: CI
+
+# Runs the api-server test suite on every PR (and on pushes to main).
+# Bugbot reads the code; this runs the system. Unit tests need no DB; the
+# tenant-isolation integration suite runs against a throwaway Postgres service.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api-server-tests:
+    name: api-server tests (unit + tenant isolation)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: orderly
+          POSTGRES_PASSWORD: orderly
+          POSTGRES_DB: orderly_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U orderly -d orderly_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 15
+
+    env:
+      # @workspace/db + drizzle-kit read DATABASE_URL; test/setup.ts promotes
+      # TEST_DATABASE_URL to DATABASE_URL and gates the integration suite on it.
+      DATABASE_URL: postgres://orderly:orderly@localhost:5432/orderly_test
+      TEST_DATABASE_URL: postgres://orderly:orderly@localhost:5432/orderly_test
+      # Don't let `pnpm run/exec` auto-run an install (which would re-trigger
+      # this repo's native-build approval gate). We install explicitly below.
+      npm_config_verify_deps_before_run: "false"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # This repo's pnpm overrides strip native rollup/esbuild binaries and gate
+      # build scripts. SWC (the Jest transform) ships a prebuilt native binary,
+      # so --ignore-scripts is enough for the tests and avoids the gate entirely.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # drizzle-kit (schema push) bundles its config with esbuild, whose binary
+      # is fetched by a build script we skipped above — rebuild just esbuild.
+      - name: Prepare esbuild (for drizzle-kit)
+        run: pnpm rebuild esbuild
+
+      - name: Push schema to test Postgres
+        run: pnpm --filter @workspace/db run push-force
+
+      - name: Run tests (unit + tenant-isolation integration)
+        run: pnpm --filter @workspace/api-server run test
