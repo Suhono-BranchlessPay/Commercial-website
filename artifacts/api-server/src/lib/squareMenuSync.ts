@@ -271,7 +271,8 @@ async function fetchAllCatalogObjects(
   return all;
 }
 
-function isPresentAtLocation(
+// Exported for unit tests (pure helpers; no behavior change).
+export function isPresentAtLocation(
   obj: SquareCatalogObjectBase,
   locationId: string,
 ): boolean {
@@ -282,7 +283,7 @@ function isPresentAtLocation(
   return true;
 }
 
-function isVariationSoldOutAtLocation(
+export function isVariationSoldOutAtLocation(
   variation: SquareCatalogItemVariation,
   locationId: string,
 ): boolean {
@@ -292,7 +293,7 @@ function isVariationSoldOutAtLocation(
   return Boolean(override?.sold_out);
 }
 
-function centsToDollars(money: SquareMoney | undefined): number {
+export function centsToDollars(money: SquareMoney | undefined): number {
   if (!money?.amount) return 0;
   return Math.round(money.amount) / 100;
 }
