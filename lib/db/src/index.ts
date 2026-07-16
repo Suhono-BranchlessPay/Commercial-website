@@ -10,7 +10,19 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+/**
+ * App connection pool. `max` is tunable via PG_POOL_MAX (default 10 =
+ * node-postgres default, i.e. no behavior change unless set). Raise this as
+ * outlet count grows — load tests show DB reads plateau once all `max`
+ * connections are busy (requests queue). Keep it below Postgres
+ * `max_connections` minus headroom for other clients / the health pool.
+ */
+const APP_POOL_MAX = Number(process.env.PG_POOL_MAX || 10);
+
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: Number.isFinite(APP_POOL_MAX) && APP_POOL_MAX > 0 ? APP_POOL_MAX : 10,
+});
 export const db = drizzle(pool, { schema });
 
 /**
