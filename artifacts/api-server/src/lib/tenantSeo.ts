@@ -304,8 +304,19 @@ function escapeJson(s: string): string {
     .replace(/\r/g, "\\r");
 }
 
+/** Site origin + trailing slash — Restaurant entity URLs must stay on the homepage root. */
+function siteRootFromCanonical(canonical: string): string {
+  try {
+    return `${new URL(canonical).origin}/`;
+  } catch {
+    return canonical.replace(/\/?$/, "/").replace(/^(https?:\/\/[^/]+\/).*$/i, "$1");
+  }
+}
+
 /** HTML fragment for <head> — title, meta, OG, Twitter, favicon, JSON-LD. */
 export function renderTenantHeadHtml(seo: TenantSeo): string {
+  const siteRoot = siteRootFromCanonical(seo.canonical);
+  const menuUrl = `${siteRoot}menu`;
   const sameAs = seo.facebookUrl
     ? `,\n      "sameAs": ["${escapeJson(seo.facebookUrl)}"]`
     : "";
@@ -373,7 +384,7 @@ ${seo.openingHours
       "@type": "Restaurant",
       "name": "${escapeJson(seo.brandName)}",
       "image": "${escapeJson(seo.ogImage)}",
-      "url": "${escapeJson(seo.canonical)}"${phone}${email},
+      "url": "${escapeJson(siteRoot)}"${phone}${email},
       "priceRange": "$$",
       "servesCuisine": [${cuisine}],
       "address": {
@@ -389,14 +400,17 @@ ${seo.openingHours
         "latitude": ${Number.isFinite(seo.lat) ? seo.lat : 0},
         "longitude": ${Number.isFinite(seo.lng) ? seo.lng : 0}
       }${rating}${opening},
-      "hasMenu": "${escapeJson(seo.canonical)}menu",
+      "hasMenu": {
+        "@type": "Menu",
+        "@id": "${escapeJson(menuUrl)}"
+      },
       "potentialAction": {
         "@type": "OrderAction",
         "target": {
           "@type": "EntryPoint",
-          "urlTemplate": "${escapeJson(seo.canonical)}order"
+          "urlTemplate": "${escapeJson(menuUrl)}"
         },
-        "deliveryMethod": ["http://purl.org/goodrelations/v1#DeliveryModePickUp", "http://purl.org/goodrelations/v1#DeliveryModeDirectDownload"]
+        "deliveryMethod": ["http://purl.org/goodrelations/v1#DeliveryModePickUp", "http://purl.org/goodrelations/v1#DeliveryModeOwnFleet"]
       }${sameAs}
     }
     </script>`;
