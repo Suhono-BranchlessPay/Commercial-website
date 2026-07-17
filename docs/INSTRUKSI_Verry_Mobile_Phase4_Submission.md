@@ -61,7 +61,7 @@ Checklist submit (tanpa login → skip SIWA / delete account):
 | WCAG AA contrast lintas tenant | Verry | ✅ `check-contrast.mjs` + Kirin accent + `tokens.color.link` |
 | Privacy / Data safety answers (markdown) | Malik + Verry | ✅ `docs/MOBILE_STORE_PRIVACY_DATA_SAFETY.md` — paste ke console masih human |
 | Screenshot shot-list | Verry / Malik | ✅ `docs/MOBILE_STORE_SCREENSHOT_SHOTLIST.md` — capture PNG masih human |
-| Store listing copy | Malik | Console / marketing |
+| Store listing copy | Malik | ✅ Draft `docs/MOBILE_STORE_LISTING_COPY.md` — paste ke console masih human |
 | EAS production build + ASC/Play forms | Verry | Human — TestFlight path di BLOK6 |
 
 ### P4 — Sisa polish brief
