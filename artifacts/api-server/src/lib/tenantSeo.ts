@@ -215,7 +215,7 @@ export function buildTenantSeo(tenant: TenantContext): TenantSeo {
     (assets && themeStr(assets, "og_image")) ||
     themeStr(theme, "ogImage") ||
     tenant.logoUrl ||
-    "/og-image.jpg";
+    "/opengraph.jpg";
   const favicon =
     tenant.faviconUrl ||
     (assets && themeStr(assets, "favicon")) ||
@@ -320,15 +320,9 @@ export function renderTenantHeadHtml(seo: TenantSeo): string {
   const sameAs = seo.facebookUrl
     ? `,\n      "sameAs": ["${escapeJson(seo.facebookUrl)}"]`
     : "";
-  const rating =
-    seo.ratingValue && seo.reviewCount
-      ? `,
-      "aggregateRating": {
-        "@type": "AggregateRating",
-        "ratingValue": "${escapeJson(seo.ratingValue)}",
-        "reviewCount": "${escapeJson(seo.reviewCount)}"
-      }`
-      : "";
+  // Never emit AggregateRating from theme placeholders (e.g. 4.9/2300).
+  // Invented metrics risk Google rich-result penalties. Re-enable only when
+  // ratings come from a verified review source (GBP / review API sync).
   const email = seo.email
     ? `,\n      "email": "${escapeJson(seo.email)}"`
     : "";
@@ -399,7 +393,7 @@ ${seo.openingHours
         "@type": "GeoCoordinates",
         "latitude": ${Number.isFinite(seo.lat) ? seo.lat : 0},
         "longitude": ${Number.isFinite(seo.lng) ? seo.lng : 0}
-      }${rating}${opening},
+      }${opening},
       "hasMenu": {
         "@type": "Menu",
         "@id": "${escapeJson(menuUrl)}"
@@ -410,7 +404,7 @@ ${seo.openingHours
           "@type": "EntryPoint",
           "urlTemplate": "${escapeJson(menuUrl)}"
         },
-        "deliveryMethod": ["http://purl.org/goodrelations/v1#DeliveryModePickUp", "http://purl.org/goodrelations/v1#DeliveryModeOwnFleet"]
+        "deliveryMethod": ["http://purl.org/goodrelations/v1#DeliveryModePickUp"]
       }${sameAs}
     }
     </script>`;
