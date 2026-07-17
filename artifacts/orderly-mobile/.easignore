@@ -1,0 +1,25 @@
+# Keep the EAS upload archive small. EAS still receives source + lockfile from
+# the monorepo root; these are local/native artifacts that must not be uploaded.
+
+android/
+ios/
+.expo/
+dist/
+web-build/
+node_modules/
+
+*.apk
+*.aab
+*.ipa
+*.jks
+*.keystore
+*.p8
+*.p12
+*.mobileprovision
+credentials.json
+google-services.json
+
+**/.DS_Store
+**/secrets/**
+*.tsbuildinfo
+.metro-health-check*

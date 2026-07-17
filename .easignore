@@ -1,0 +1,35 @@
+# EAS uploads from the monorepo root. Exclude local native build trees and
+# dependency installs — EAS regenerates ios/ via prebuild and runs pnpm install
+# + pod install on the worker. Without this the archive was ~505 MB (mostly
+# artifacts/orderly-mobile/android).
+
+**/node_modules/
+**/android/
+**/ios/
+**/.expo/
+**/dist/
+**/web-build/
+**/.kotlin/
+
+*.apk
+*.aab
+*.ipa
+*.jks
+*.keystore
+*.p8
+*.p12
+*.mobileprovision
+credentials.json
+google-services.json
+
+.git/
+**/.DS_Store
+**/secrets/
+*.tsbuildinfo
+.metro-health-check*
+
+# Local scratch / deploy helpers — not needed for the mobile binary
+scripts/tmp-*
+scripts/deploy-*.sh
+scripts/pr-body-*.md
+artifacts/orderly-mobile/scripts/tmp-*
