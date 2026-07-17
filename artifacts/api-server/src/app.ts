@@ -14,7 +14,11 @@ import {
 } from "./middleware/spaHtml";
 import { requireOrderlyDashboardHostPage } from "./lib/dashboardHost";
 import qrRouter from "./routes/qr";
-import { robotsTxtHandler, sitemapXmlHandler } from "./routes/seoFiles";
+import {
+  googleSiteVerificationHandler,
+  robotsTxtHandler,
+  sitemapXmlHandler,
+} from "./routes/seoFiles";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DASHBOARD_ROOT = path.resolve(__dirname, "../public/dashboard");
@@ -79,6 +83,8 @@ app.use(qrRouter);
 // Per-tenant SEO files (must beat static robots.txt in storefront dist).
 app.get("/robots.txt", robotsTxtHandler);
 app.get("/sitemap.xml", sitemapXmlHandler);
+// Google Search Console HTML-file verification (e.g. /google27c314f8a7bebb36.html).
+app.get(/^\/google[0-9a-f]+\.html$/i, googleSiteVerificationHandler);
 
 app.use("/api/uploads", express.static(UPLOADS_ROOT));
 app.use("/api", tenantMiddleware, router);

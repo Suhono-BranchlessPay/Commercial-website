@@ -1,5 +1,5 @@
 import type { RequestHandler } from "express";
-import { resolveTenant } from "../lib/tenant";
+import { resolveTenant, tenantSecret } from "../lib/tenant";
 import { listIndexableTags } from "../lib/seoTags";
 import { listIndexablePlaces } from "../lib/seoPlaces";
 import { rebuildSeoTagsForTenant } from "../lib/seoTags";
@@ -10,6 +10,9 @@ import {
   type SeoLocale,
 } from "../lib/seoLocales";
 import { logger } from "../lib/logger";
+
+/** Google Search Console HTML-file token: google[0-9a-f]+.html */
+const GSC_HTML_RE = /^\/google[0-9a-f]+\.html$/i;
 
 async function tenantFromReq(req: {
   headers: { host?: string; [k: string]: unknown };
@@ -45,6 +48,49 @@ function escapeXml(s: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+
+/**
+ * Google Search Console HTML-file verification.
+ *
+ * Set per tenant (preferred) or globally:
+ *   TENANT_SAMURAI_GOOGLE_SITE_VERIFICATION_FILE=google27c314f8a7bebb36.html
+ *   GOOGLE_SITE_VERIFICATION_FILE=google27c314f8a7bebb36.html
+ *
+ * Serves exactly: `google-site-verification: <filename>`
+ * Only the configured filename for the resolved Host/tenant is accepted.
+ */
+export const googleSiteVerificationHandler: RequestHandler = async (
+  req,
+  res,
+  next,
+) => {
+  try {
+    if (!GSC_HTML_RE.test(req.path)) {
+      res.status(404).type("text/plain").send("Not found\n");
+      return;
+    }
+    const tenant = await tenantFromReq(req);
+    if (!tenant) {
+      res.status(404).type("text/plain").send("Not found\n");
+      return;
+    }
+    const configured =
+      tenantSecret(tenant.slug, "GOOGLE_SITE_VERIFICATION_FILE") ?? "";
+    const requested = req.path.replace(/^\//, "");
+    if (!configured || configured !== requested) {
+      res.status(404).type("text/plain").send("Not found\n");
+      return;
+    }
+    res
+      .status(200)
+      .type("text/html; charset=utf-8")
+      .setHeader("Cache-Control", "no-store")
+      .send(`google-site-verification: ${configured}\n`);
+  } catch (err) {
+    logger.error({ err }, "google site verification file failed");
+    next(err);
+  }
+};
 
 /** Per-tenant robots.txt — disallow owner/account; point at sitemap. */
 export const robotsTxtHandler: RequestHandler = async (req, res, next) => {

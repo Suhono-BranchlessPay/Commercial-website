@@ -33,6 +33,19 @@ psql "$DATABASE_URL" -f scripts/migrate-seo-programmatic.sql
 # (see scripts/fix-samurai-nginx-seo.sh)
 ```
 
+## Google Search Console
+
+1. Add property `https://samurairesto.com` (URL prefix).
+2. Choose **HTML file** verification → download `google….html`.
+3. Set env on the API (per tenant preferred):
+   ```bash
+   TENANT_SAMURAI_GOOGLE_SITE_VERIFICATION_FILE=google27c314f8a7bebb36.html
+   ```
+4. Redeploy / `pm2 restart … --update-env`.
+5. Confirm: `curl -sS https://samurairesto.com/google27c314f8a7bebb36.html`
+   → must print `google-site-verification: google….html`
+6. Click **Verify** in Search Console → submit sitemap `https://samurairesto.com/sitemap.xml`.
+
 ## Verify
 
 ```bash
