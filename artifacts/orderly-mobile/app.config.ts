@@ -59,6 +59,10 @@ export default ({ config }: ConfigContext) => ({
   plugins: [
     // Official Square Expo config plugin (In-App Payments native setup)
     "react-native-square-in-app-payments",
+    // Adds the Square SDK "setup" Run Script build phase so the nested Square
+    // frameworks are un-nested + the unsigned `setup` helper self-deletes.
+    // Without this App Store rejects with ITMS-90205/90206/90035.
+    "./plugins/withSquareSetupScript",
     [
       "expo-notifications",
       {
