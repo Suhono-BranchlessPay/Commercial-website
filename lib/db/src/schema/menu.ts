@@ -117,6 +117,13 @@ export const ordersTable = pgTable("orders", {
   paymentStatus: text("payment_status").notNull().default("unpaid"),
   squareOrderId: text("square_order_id"),
   squarePaymentId: text("square_payment_id"),
+  /**
+   * Legacy ops column on some DBs (defaulted to pending). App sets `pushed`
+   * when Square order/payment IDs are written — never leave misleading pending.
+   */
+  squarePushStatus: text("square_push_status"),
+  squarePushError: text("square_push_error"),
+  squarePushedAt: timestamp("square_pushed_at"),
   doordashExternalDeliveryId: text("doordash_external_delivery_id"),
   doordashTrackingUrl: text("doordash_tracking_url"),
   doordashStatus: text("doordash_status"),

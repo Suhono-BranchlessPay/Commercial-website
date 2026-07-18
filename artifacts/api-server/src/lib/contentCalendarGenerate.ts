@@ -133,6 +133,9 @@ async function inboxThemes(tenantId: string): Promise<{
 }
 
 async function socialPostsPerformance(tenantId: string) {
+  const { filterPastPerformanceForContentEngine } = await import(
+    "./dailyReportDataQuality"
+  );
   const rows = await db
     .select({
       srcTag: socialPostsTable.srcTag,
@@ -150,15 +153,17 @@ async function socialPostsPerformance(tenantId: string) {
       ),
     )
     .orderBy(desc(socialPostsTable.orders), desc(socialPostsTable.clicks))
-    .limit(15);
-  return rows.map((r) => ({
-    src: r.srcTag,
-    item: r.menuItemName,
-    clicks: r.clicks,
-    orders: r.orders,
-    revenueCents: r.revenueCents,
-    postedAt: r.postedAt?.toISOString() ?? null,
-  }));
+    .limit(30);
+  return filterPastPerformanceForContentEngine(
+    rows.map((r) => ({
+      src: r.srcTag,
+      item: r.menuItemName,
+      clicks: r.clicks,
+      orders: r.orders,
+      revenueCents: r.revenueCents,
+      postedAt: r.postedAt?.toISOString() ?? null,
+    })),
+  ).slice(0, 15);
 }
 
 function allocatePillars(
@@ -316,6 +321,8 @@ export async function generateContentCalendarMonth(input: {
   const pastCal = await fetchPastContentPerformance(input.tenantId, 45);
   const pastSocial = await socialPostsPerformance(input.tenantId);
   const past_content_performance = [...pastCal, ...pastSocial].slice(0, 20);
+  const attribution_dq_note =
+    "Excluded posts dated 2026-07-16..2026-07-18 (attribution_incomplete): bare Facebook links / first-touch gaps. Do not treat those click→0 rows as real failures; keep promoting proven sellers (e.g. Shrimp Bento, Hibachi).";
 
   const holidays = usHolidaysForMonth(year, month);
   const localEvents = [
@@ -356,6 +363,7 @@ export async function generateContentCalendarMonth(input: {
     faq_from_inbox: themes.faq,
     verified_quotes: themes.verifiedQuotes,
     past_content_performance,
+    attribution_dq_note,
     items_with_photos: photoCatalog,
     unavailable_items: unavailable.map((u) => u.name),
     local_events: localEvents,

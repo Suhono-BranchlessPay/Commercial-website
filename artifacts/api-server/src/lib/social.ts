@@ -311,7 +311,19 @@ export async function draftReplyForRow(
   const row = await getInboxRow(id);
   if (!row) return null;
 
-  let classification = row.classification as SocialClassification;
+  // Always re-classify from current body so pre-fix pending drafts
+  // (e.g. donut off-topic mislabeled as praise) are corrected on re-draft.
+  const fresh = classifySocialMessage(row.body ?? "");
+  let classification = fresh.classification as SocialClassification;
+  if (
+    classification !== row.classification ||
+    JSON.stringify(fresh.riskFlags) !== JSON.stringify(row.riskFlags ?? [])
+  ) {
+    await updateInboxRow(id, {
+      classification,
+      riskFlags: fresh.riskFlags,
+    });
+  }
 
   if (classification === "allergy_health") {
     const updated = await updateInboxRow(id, {
@@ -621,6 +633,45 @@ export async function draftReplyForRow(
     escalate: false,
     note: "Skipped — AI could not draft safely; refusing generic thank-you fallback.",
   };
+}
+
+/**
+ * Re-run classification + draft for pending_approval rows (fixes stale
+ * pre-relevance drafts such as donut thank-yous). Off-topic → skipped.
+ */
+export async function reclassifyPendingApprovalDrafts(input: {
+  tenantId: string;
+  limit?: number;
+  actor?: string;
+}): Promise<{ scanned: number; skipped: number; redrafted: number }> {
+  const rows = await listInbox({
+    tenantId: input.tenantId,
+    status: "pending_approval",
+    limit: input.limit ?? 100,
+  });
+  let skipped = 0;
+  let redrafted = 0;
+  let tenantName = "the restaurant";
+  try {
+    const tenant = await findTenantById(input.tenantId);
+    if (tenant?.name) tenantName = tenant.name;
+  } catch {
+    /* non-fatal */
+  }
+  const actor = input.actor ?? "reclassify-pending";
+  for (const row of rows) {
+    const result = await draftReplyForRow(row.id, tenantName, actor);
+    if (!result) continue;
+    if (result.row.status === "skipped" || result.row.status === "blocked") {
+      skipped += 1;
+    } else if (
+      result.row.status === "pending_approval" ||
+      result.row.status === "drafted"
+    ) {
+      redrafted += 1;
+    }
+  }
+  return { scanned: rows.length, skipped, redrafted };
 }
 
 /**

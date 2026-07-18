@@ -33,6 +33,7 @@ import {
   ingestInboundMessage,
   listAuditForInbox,
   listInbox,
+  reclassifyPendingApprovalDrafts,
   sendApprovedReply,
   skipInboxRow,
   toPublicInboxRow,
@@ -351,6 +352,31 @@ router.post("/inbox/:id/draft", async (req, res): Promise<void> => {
   } catch (err) {
     req.log?.error({ err }, "Social draft failed");
     res.status(500).json({ error: "Failed to draft reply" });
+  }
+});
+
+/** One-shot: reclassify + redraft/skip all pending_approval (post relevance fix). */
+router.post("/inbox/reclassify-pending", async (req, res): Promise<void> => {
+  try {
+    const tenantId = scopedTenantOrRespond(req, res);
+    if (tenantId === undefined) return;
+    if (!tenantId) {
+      res.status(400).json({ error: "tenant_id is required" });
+      return;
+    }
+    const limit = Math.min(
+      Math.max(Number((req.body as { limit?: number })?.limit ?? 100) || 100, 1),
+      200,
+    );
+    const result = await reclassifyPendingApprovalDrafts({
+      tenantId,
+      limit,
+      actor: req.socialActor!.label,
+    });
+    res.json(result);
+  } catch (err) {
+    req.log?.error({ err }, "Social reclassify-pending failed");
+    res.status(500).json({ error: "Failed to reclassify pending drafts" });
   }
 });
 

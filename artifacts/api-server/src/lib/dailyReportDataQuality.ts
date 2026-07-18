@@ -50,3 +50,26 @@ export function hasIncompleteAttributionWindow(
     flags?.some((f) => f.code === ATTRIBUTION_INCOMPLETE_WINDOW.code),
   );
 }
+
+/** YYYY-MM-DD (UTC date slice) inside the incomplete-attribution window. */
+export function isInAttributionIncompleteWindow(
+  isoDateOrPostedAt: string | Date | null | undefined,
+): boolean {
+  if (isoDateOrPostedAt == null) return false;
+  const day =
+    typeof isoDateOrPostedAt === "string"
+      ? isoDateOrPostedAt.slice(0, 10)
+      : isoDateOrPostedAt.toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
+  return (
+    day >= ATTRIBUTION_INCOMPLETE_WINDOW.start &&
+    day <= ATTRIBUTION_INCOMPLETE_WINDOW.end
+  );
+}
+
+/** Drop misleading click→order rows from Content Engine / learning inputs. */
+export function filterPastPerformanceForContentEngine<
+  T extends { postedAt?: string | Date | null },
+>(rows: T[]): T[] {
+  return rows.filter((r) => !isInAttributionIncompleteWindow(r.postedAt ?? null));
+}

@@ -5,6 +5,10 @@ import {
   suggestTimeBeforePeak,
   wordCount,
 } from "../../src/lib/contentCalendar";
+import {
+  filterPastPerformanceForContentEngine,
+  isInAttributionIncompleteWindow,
+} from "../../src/lib/dailyReportDataQuality";
 import { parseContentCalendarOutput } from "../../src/lib/ai/guardrails";
 
 describe("content calendar helpers", () => {
@@ -36,6 +40,36 @@ describe("content calendar helpers", () => {
     expect(captionHasBannedClaim("Hibachi Chicken ready for pickup")).toBe(
       false,
     );
+  });
+
+  test("Content Engine past_performance excludes Jul 16–18 DQ window", () => {
+    expect(isInAttributionIncompleteWindow("2026-07-16T20:00:00.000Z")).toBe(
+      true,
+    );
+    expect(isInAttributionIncompleteWindow("2026-07-18")).toBe(true);
+    expect(isInAttributionIncompleteWindow("2026-07-19")).toBe(false);
+    const filtered = filterPastPerformanceForContentEngine([
+      {
+        src: "fb-shrimpbento-20260716",
+        clicks: 33,
+        orders: 0,
+        postedAt: "2026-07-16T18:00:00.000Z",
+      },
+      {
+        src: "fb-hibachi-20260717",
+        clicks: 37,
+        orders: 0,
+        postedAt: "2026-07-17",
+      },
+      {
+        src: "fb-ok-20260719",
+        clicks: 5,
+        orders: 2,
+        postedAt: "2026-07-19T12:00:00.000Z",
+      },
+    ]);
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]!.src).toBe("fb-ok-20260719");
   });
 
   test("parse content calendar JSON", () => {

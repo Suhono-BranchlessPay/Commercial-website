@@ -33,6 +33,7 @@ import {
 } from "@workspace/db";
 import { buildTrackedUrl, slugifyShortPath } from "./socialPostDraft";
 import { QR_SCAN_BOT_UA_PATTERN } from "./qrScanBotFilter";
+import { filterPastPerformanceForContentEngine } from "./dailyReportDataQuality";
 import { logger } from "./logger";
 
 export {
@@ -589,14 +590,18 @@ export async function fetchPastContentPerformance(
     .orderBy(desc(contentCalendarTable.orders))
     .limit(20);
 
-  return cal.map((r) => ({
-    src: r.srcSlug,
-    item: r.targetItemName,
-    clicks: r.clicks,
-    orders: r.orders,
-    revenueCents: r.revenueCents,
-    postedAt: r.postedAt?.toISOString() ?? null,
-  }));
+  // Exclude Jul 16–18 attribution-incomplete window so the AI does not
+  // treat click→0 gaps (bare FB links / first-touch bug) as real failures.
+  return filterPastPerformanceForContentEngine(
+    cal.map((r) => ({
+      src: r.srcSlug,
+      item: r.targetItemName,
+      clicks: r.clicks,
+      orders: r.orders,
+      revenueCents: r.revenueCents,
+      postedAt: r.postedAt?.toISOString() ?? null,
+    })),
+  );
 }
 
 export async function listMenuItemsWithPhotos(tenantId: string): Promise<

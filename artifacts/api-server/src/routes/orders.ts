@@ -6,7 +6,7 @@ import {
   menuItemsTable,
   customersTable,
 } from "@workspace/db";
-import { and, eq, gte, desc } from "drizzle-orm";
+import { and, eq, gte, desc, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { z } from "zod";
 import { checkPin } from "../lib/ownerAuth";
@@ -508,8 +508,24 @@ router.post("/orders", async (req, res): Promise<void> => {
           : null,
       squareOrderId: squareResult.squareOrderId,
       squarePaymentId: squareResult.squarePaymentId,
+      squarePushStatus: "pushed",
+      squarePushError: null,
+      squarePushedAt: paidAt,
       specialInstructions: input.specialInstructions ?? null,
     });
+
+    // Best-effort sync if legacy columns exist but insert path omitted them.
+    try {
+      await db.execute(sql`
+        UPDATE orders
+        SET square_push_status = 'pushed',
+            square_push_error = NULL,
+            square_pushed_at = COALESCE(square_pushed_at, ${paidAt})
+        WHERE id = ${orderId} AND square_order_id IS NOT NULL
+      `);
+    } catch {
+      /* column may be absent on older DBs — migrate-fix-square-push-status.sql */
+    }
 
     for (const line of lines) {
       await db.insert(orderLinesTable).values({
