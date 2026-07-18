@@ -27,6 +27,7 @@ function emptyExtras(): Pick<
   DailyReportPayload,
   | "qrScans"
   | "socialPosts"
+  | "contentCalendar"
   | "gbp"
   | "gsc"
   | "foodDrinkNote"
@@ -45,6 +46,13 @@ function emptyExtras(): Pick<
       posted: 0,
       highlights: [],
       clickAnomalies: [],
+    },
+    contentCalendar: {
+      draft: 0,
+      approved: 0,
+      postedInWindow: 0,
+      highlights: [],
+      lookbackDays: 14,
     },
     gbp: {
       available: false,
