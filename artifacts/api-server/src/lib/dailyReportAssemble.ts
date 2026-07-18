@@ -84,6 +84,8 @@ export type DailyReportPayload = {
     quotes: ReputationQuote[];
     urgent: ReputationQuote[];
     unanswered: UnansweredInboxItem[];
+    /** Questions still in unanswered statuses (subset of unanswered). */
+    unansweredQuestions: number;
   };
   qrScans: QrScanDaySummary;
   socialPosts: SocialPostsDaySummary;
@@ -120,6 +122,33 @@ function weekdayName(isoDate: string, timeZone: string): string {
   }
 }
 
+/** Structured attention — never invent counts; keep Questions vs unanswered aligned. */
+export function buildAttentionLine(
+  reputation: DailyReportPayload["reputation"],
+): string {
+  const parts: string[] = [];
+  if (reputation.urgent.length) {
+    parts.push(
+      `${reputation.urgent.length} complaint/health item(s) need a look.`,
+    );
+  }
+  const q = reputation.buckets.question;
+  const uq = reputation.unansweredQuestions;
+  const uAll = reputation.unanswered.length;
+  if (q > 0 && uAll > 0) {
+    parts.push(
+      `${q} questions yesterday · ${uAll} still unanswered` +
+        (uq > 0 && uq !== uAll ? ` (${uq} of them questions)` : "") +
+        ".",
+    );
+  } else if (q > 0 && uAll === 0) {
+    parts.push(`${q} questions yesterday — all answered or cleared.`);
+  } else if (uAll > 0) {
+    parts.push(`${uAll} inbox message(s) still unanswered.`);
+  }
+  return parts.join(" ");
+}
+
 export function buildFactInsights(
   p: Pick<
     DailyReportPayload,
@@ -132,15 +161,29 @@ export function buildFactInsights(
     | "restaurantName"
     | "reportDate"
     | "timeZone"
+    | "socialPosts"
   >,
 ): string[] {
   const out: string[] = [];
+
+  const anomaly = p.socialPosts.clickAnomalies[0];
+  if (anomaly) {
+    const top = p.topProducts[0]?.name;
+    out.push(
+      `${anomaly.itemName}: ${anomaly.clicks} clicks → ${anomaly.orders} orders` +
+        (top
+          ? ` — interest without checkout; try promoting ${top}, which already sells.`
+          : " — interest without checkout; promote what already sells.") +
+        " (Some clicks may be influencer/share traffic — tracked separately later.)",
+    );
+  }
+
   if (p.peakHour != null) {
     out.push(
       `Busiest hour (last 7 days): around ${peakLabel(p.peakHour)}. Consider staffing and posting 1–2 hours before that window.`,
     );
   }
-  if (p.topProducts[0]) {
+  if (p.topProducts[0] && !anomaly) {
     const top = p.topProducts[0];
     out.push(
       `Top seller (last 7 days): ${top.name} — ${top.quantity} sold, ${dollars(top.netSalesCents)} net. Promote what already sells.`,
@@ -157,12 +200,11 @@ export function buildFactInsights(
     );
   }
   const google = p.orderlyChannels.find((c) => c.src.includes("google"));
-  if (google && google.orders > 0) {
+  if (google && google.orders > 0 && out.length < 3) {
     out.push(
       `Orderly tracked ${google.orders} paid online order(s) from Google (${dollars(google.totalCents)}) — marketplace-fee free. This is a subset of Square totals, not extra revenue.`,
     );
   }
-  if (p.supplyReminder) out.push(p.supplyReminder);
   return out.slice(0, 3);
 }
 
@@ -215,12 +257,24 @@ function buildFactNarrative(
     );
   }
 
-  if (p.reputation.quotes[0]) {
+  const anomaly = p.socialPosts.clickAnomalies[0];
+  if (anomaly) {
+    const top = p.topProducts[0]?.name;
+    parts.push(
+      `${anomaly.itemName} drew ${anomaly.clicks} clicks but ${anomaly.orders} paid orders` +
+        (top
+          ? ` — people looked, didn’t buy. Feature ${top} (your proven seller) instead.`
+          : " — people looked, didn’t buy. Feature what already sells.") +
+        " Some of those clicks may be influencer/share traffic (separate tracking later).",
+    );
+  } else if (p.reputation.quotes[0]) {
     parts.push(`A guest note: “${p.reputation.quotes[0].excerpt}”`);
   }
 
   let idea = "";
-  if (p.topProducts[0] && p.peakHour != null) {
+  if (anomaly && p.topProducts[0]) {
+    idea = `Skip pushing ${anomaly.itemName} for now — post ${p.topProducts[0].name} before peak hour instead.`;
+  } else if (p.topProducts[0] && p.peakHour != null) {
     idea = `Promote ${p.topProducts[0].name} with a post about 1–2 hours before ${peakLabel(p.peakHour)}.`;
   } else if (p.topProducts[0]) {
     idea = `Lean into what already sells — feature ${p.topProducts[0].name} in today’s post.`;
@@ -228,22 +282,10 @@ function buildFactNarrative(
     idea = "Review unanswered inbox items first, then schedule one post before your usual rush.";
   }
 
-  const attentionParts: string[] = [];
-  if (p.reputation.urgent.length) {
-    attentionParts.push(
-      `${p.reputation.urgent.length} complaint/health item(s) need a look.`,
-    );
-  }
-  if (p.reputation.unanswered.length) {
-    attentionParts.push(
-      `${p.reputation.unanswered.length} inbox message(s) still unanswered.`,
-    );
-  }
-
   return {
     greeting: `Good morning — here’s ${p.restaurantName} for ${p.reportDate}.`,
     body: parts.join("\n\n"),
-    attention: attentionParts.join(" "),
+    attention: buildAttentionLine(p.reputation),
     ideaForToday: idea,
     source: "facts",
   };
@@ -294,6 +336,10 @@ function factsForAi(
     })),
     reputation: {
       buckets: p.reputation.buckets,
+      questions_yesterday: p.reputation.buckets.question,
+      unanswered_total: p.reputation.unanswered.length,
+      unanswered_questions: p.reputation.unansweredQuestions,
+      attention_line_use_exactly: buildAttentionLine(p.reputation),
       urgent: p.reputation.urgent.map((u) => ({
         classification: u.classification,
         platform: u.platform,
@@ -311,7 +357,12 @@ function factsForAi(
       bot: p.qrScans.bot,
       top_src: p.qrScans.bySrc.slice(0, 5),
     },
-    social_posts: p.socialPosts,
+    social_posts: {
+      ...p.socialPosts,
+      click_anomalies: p.socialPosts.clickAnomalies,
+    },
+    note_influencer:
+      "Some high-click src tags may include influencer/share traffic — do not claim all clicks are buyers. Separate influencer tracking comes later.",
     google_reviews: p.gbp,
     food_drink_note: p.foodDrinkNote,
     supply_reminder: p.supplyReminder || null,
@@ -335,15 +386,16 @@ async function generateNarrative(
     });
     if (result.ok && result.output && typeof result.output === "object") {
       const out = result.output as DailyReportLlmOutput;
+      // Attention counts are code-owned (Questions vs unanswered must stay consistent).
       return {
         narrative: {
           greeting: out.greeting || fallback.greeting,
           body: out.narrative,
-          attention: out.attention || fallback.attention,
+          attention: fallback.attention,
           ideaForToday: out.ideaForToday || fallback.ideaForToday,
           source: "ai",
         },
-        insights: out.insights.length ? out.insights : factInsights,
+        insights: factInsights.length ? factInsights : out.insights,
       };
     }
     logger.warn(
