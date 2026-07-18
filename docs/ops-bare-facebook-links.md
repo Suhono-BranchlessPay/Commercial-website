@@ -4,10 +4,18 @@ Goal: every Facebook surface that sends traffic to the storefront must use a tra
 
 ## Checklist (Meta Page)
 
-- [ ] **Page CTA button** (Order Online / Book Now) → tracked short or `/r/samurai?src=fb-page-cta-YYYYMMDD`
-- [ ] **About → Website** → same tracked pattern (or `fb-about-YYYYMMDD`)
-- [ ] **Pinned / recent organic posts** with a link → edit or comment with tracked URL; prefer `/s/{slug}?src=fb-{item}-YYYYMMDD&item=…` for menu posts
-- [ ] **Ads / boosts** → landing URL must keep `src=` (Facebook may append `fbclid`; storefront now falls back if `src` is missing)
+- [x] **Page CTA button** (Start order) → `https://samurairesto.com/r/samurai?src=fb-page-cta-20260718` (done 2026-07-18)
+- [x] **About → Website / Links** → `https://samurairesto.com/r/samurai?src=fb-about-20260718` (label: Order Online; done 2026-07-18)
+- [x] **Pinned / recent organic posts** with a link → captions already tracked (verified 2026-07-18):
+  - Hibachi Chicken → `src=fb-hibachichicken-20260718&item=SKU017`
+  - Shrimp Bento → `src=fb-shrimpbento-20260716&item=SKU015`
+  - Crab Meat Bento → `src=fb-crabmeatbento-20260714`
+  - Note: OG preview cards still *display* as `samurairesto.com`, but caption links include `?src=`
+- [x] **Ads / boosts** → audited 2026-07-18: **no Samurai ads to fix**
+  - Page Ad Center (All ads): empty — “Metrics… once you get started”
+  - Meta Ad Library (`view_all_page_id=61588499377259`): “No ads match your search criteria”
+  - Ads Manager opened from Ad Center (`act=836339601942971`, classic `page_id=1031895316670551`) shows other restaurants (Yuki Poke / Pho / etc.), not Samurai landing URLs
+  - When creating the first boost/ad, use e.g. `https://samurairesto.com/r/samurai?src=fb-ad-YYYYMMDD` (Facebook may append `fbclid`)
 
 ## Code paths (already tracked)
 

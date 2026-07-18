@@ -66,6 +66,10 @@ export function buildContentCalendarMessages(
     menu_requests: j(input.menu_requests),
     faq_from_inbox: j(input.faq_from_inbox),
     past_content_performance: j(input.past_content_performance),
+    attribution_dq_note: String(
+      input.attribution_dq_note ??
+        "Rows posted 2026-07-16 through 2026-07-18 are excluded (incomplete attribution).",
+    ),
     items_with_photos: j(input.items_with_photos),
     unavailable_items: j(input.unavailable_items),
     local_events: j(input.local_events),

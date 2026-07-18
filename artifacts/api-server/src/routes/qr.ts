@@ -154,9 +154,10 @@ router.get(
         itemId,
       );
 
-      void db
-        .insert(qrScansTable)
-        .values({
+      // Await insert so Content Engine /s/ attribution is durable before redirect.
+      // Still never fail the diner redirect if logging breaks.
+      try {
+        await db.insert(qrScansTable).values({
           tenantId: tenant.id,
           tenantSlug: tenant.slug,
           redirectUrl,
@@ -179,10 +180,10 @@ router.get(
             item: itemId,
             match_count: matches.length,
           },
-        })
-        .catch((err: unknown) => {
-          logger.warn({ err, itemSlug }, "qr_scans insert failed (/s)");
         });
+      } catch (err: unknown) {
+        logger.warn({ err, itemSlug, src }, "qr_scans insert failed (/s)");
+      }
 
       res.setHeader("Cache-Control", "no-store");
       res.redirect(302, redirectUrl);

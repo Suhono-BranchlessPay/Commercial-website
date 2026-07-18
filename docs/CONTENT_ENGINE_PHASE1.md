@@ -28,6 +28,21 @@ psql "$DATABASE_URL" -f scripts/migrate-content-calendar.sql
 
 `content_calendar_config`: `n_posts` (default 14 ≈ 3–4/week), `pillar_mix`, tone, language, cuisine, `local_events`.
 
+## Attribution DQ (P0)
+
+`past_content_performance` for task `content_calendar` **excludes** posts dated
+`2026-07-16`–`2026-07-18` (`ATTRIBUTION_INCOMPLETE_WINDOW` in
+`dailyReportDataQuality.ts`). Same window as the daily-report banner — so August
+generation will not treat Shrimp Bento / Hibachi click→0 gaps as real failures.
+
+## `/s/` closed-loop smoke (P0)
+
+1. From Facebook in-app browser on phone: open  
+   `https://samurairesto.com/s/{slug}?src=test-manual`  
+2. Order cheapest item → checkout.
+3. Confirm: (a) `qr_scans` row for that `src` counts as **human** (non-bot UA),  
+   (b) paid order has `source_detail.src = test-manual`.
+
 ## Out of scope (later phases)
 
 Canva Autofill, auto-schedule via Meta Guard, SEO article + GBP triple-publish, month-over-month learning loop.

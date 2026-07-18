@@ -9,6 +9,7 @@ Praise themes from customers: {{praise_themes}}
 Menu requests from inbox: {{menu_requests}}
 Recurring questions (menu_education fuel): {{faq_from_inbox}}
 Past content that drove orders (multi-day lookback): {{past_content_performance}}
+Attribution data-quality note: {{attribution_dq_note}}
 Items WITH PHOTOS (only these may be visual product posts): {{items_with_photos}}
 86'd / unavailable (NEVER promote): {{unavailable_items}}
 Local events this month: {{local_events}}
@@ -37,3 +38,4 @@ RULES:
 - Do NOT invent order URLs — the system appends tracked ?src= links after generation.
 - Prefer 3–4 quality posts per week over stuffing the calendar.
 - Non-product pillars (behind_scenes, community_local, timely) may omit target_item_id.
+- past_content_performance already excludes the attribution-incomplete window (Jul 16–18 2026). Do NOT treat missing or zero-order rows from that window as real campaign failures, and do NOT avoid top sellers solely because of those gaps.
