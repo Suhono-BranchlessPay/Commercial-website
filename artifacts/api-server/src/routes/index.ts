@@ -22,10 +22,12 @@ import seoRouter from "./seo";
 import loyaltyRouter from "./loyalty";
 import giftCardsRouter from "./giftCards";
 import clientRouter from "./client";
+import dailyReportRouter from "./dailyReport";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(dailyReportRouter);
 router.use(menuRouter);
 router.use(ordersRouter);
 router.use(customersRouter);

@@ -5,6 +5,7 @@ import { ensureClientSeedUsers } from "./lib/clientAuth";
 import { listSyncableTenants, syncSquareMenuForTenant } from "./lib/squareMenuSync";
 import { syncGbpReviews } from "./lib/gbp";
 import { GBP_TRIAL_TENANT_IDS } from "./lib/gbpConfig";
+import { startDailyReportCron } from "./lib/dailyReportCron";
 
 const rawPort = process.env["PORT"];
 
@@ -100,3 +101,6 @@ if (GBP_SYNC_INTERVAL_MS > 0) {
 } else {
   logger.info("GBP review sync cron disabled (set GBP_SYNC_INTERVAL_MS to enable, e.g. 1800000 for 30min)");
 }
+
+/** Daily AI Orderly report — 4am local per tenant. Off unless DAILY_REPORT_ENABLED=1. */
+startDailyReportCron();

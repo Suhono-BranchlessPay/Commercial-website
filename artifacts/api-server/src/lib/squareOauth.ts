@@ -39,6 +39,8 @@ export const SQUARE_OAUTH_SCOPES = [
   "PAYMENTS_READ",
   "PAYMENTS_WRITE",
   "ITEMS_READ",
+  /** Daily AI report — Square Reporting API (POST /reporting/v1/load). */
+  "REPORTING_READ",
   /** Part 3 — Square Gift Cards (compliance issuer). */
   "GIFTCARDS_READ",
   "GIFTCARDS_WRITE",
