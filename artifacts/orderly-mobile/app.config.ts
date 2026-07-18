@@ -69,6 +69,8 @@ export default ({ config }: ConfigContext) => ({
     backgroundColor: tenant.theme.background,
   },
   plugins: [
+    // Square In-App Payments (card-entry 1.6.x) requires minSdk 28.
+    "./plugins/withAndroidMinSdk28",
     // Official Square Expo config plugin (In-App Payments native setup)
     "react-native-square-in-app-payments",
     // Adds the Square SDK "setup" Run Script build phase so the nested Square
