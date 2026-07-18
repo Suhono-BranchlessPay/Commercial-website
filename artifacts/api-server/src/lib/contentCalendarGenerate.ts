@@ -236,6 +236,23 @@ function matchMenuItem(
   );
 }
 
+/** Prefer longest menu-name mention in hook/caption so links match the copy. */
+function matchMenuItemFromText(
+  text: string | null | undefined,
+  catalog: Array<{ id: string; name: string }>,
+): { id: string; name: string } | null {
+  const hay = String(text || "").toLowerCase();
+  if (!hay.trim() || !catalog.length) return null;
+  let best: { id: string; name: string } | null = null;
+  for (const item of catalog) {
+    const name = item.name.toLowerCase().trim();
+    if (name.length < 4) continue;
+    if (!hay.includes(name)) continue;
+    if (!best || name.length > best.name.length) best = item;
+  }
+  return best;
+}
+
 export async function generateContentCalendarMonth(input: {
   tenantId: string;
   /** YYYY-MM */
@@ -457,12 +474,20 @@ export async function generateContentCalendarMonth(input: {
       "customer_voice",
     ].includes(pillar);
 
-    let matched = matchMenuItem(
-      p.target_item_id || p.target_item_name || null,
+    const fromText = matchMenuItemFromText(
+      `${p.hook || ""} ${p.caption || ""} ${p.target_item_name || ""}`,
       photoCatalog,
     );
-    if (needsItem && !matched && photoCatalog[i % Math.max(1, photoCatalog.length)]) {
-      matched = photoCatalog[i % photoCatalog.length]!;
+    let matched =
+      matchMenuItem(p.target_item_id || p.target_item_name || null, photoCatalog) ||
+      fromText;
+    // Last resort: top seller with a photo — never arbitrary catalog[i]
+    // (that previously linked Hibachi copy → Bottle Water).
+    if (needsItem && !matched) {
+      const topName = topRows[0]?.name;
+      matched = topName
+        ? matchMenuItem(topName, photoCatalog) || photoCatalog[0] || null
+        : photoCatalog[0] || null;
     }
     // Visual posts require a photo item when pillar is product-ish
     if (needsItem && !matched) {
