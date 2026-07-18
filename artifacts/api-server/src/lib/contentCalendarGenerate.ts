@@ -295,7 +295,6 @@ export async function generateContentCalendarMonth(input: {
   /** Full menu for caption→item matching (includes items without photos). */
   const menuCatalog = available.map((p) => ({ id: p.id, name: p.name }));
   const photoCatalog = photos.map((p) => ({ id: p.id, name: p.name }));
-  const photoIds = new Set(photoCatalog.map((p) => p.id));
 
   // Square — 30d top products (reuse reporting helper with last 30 days)
   const topRes = await fetchSquareTopProducts(tenant.slug, 10);
@@ -573,10 +572,12 @@ export async function generateContentCalendarMonth(input: {
       shortLink: links.shortLink,
       photoAssetId: links.photoAssetId,
       designBrief: {
-        photo_needed:
-          Boolean(p.photo_needed) ||
-          !links.photoAssetId ||
-          !photoIds.has(matched?.id || ""),
+        // True only when the target item has no menu image — ignore model photo_needed.
+        photo_needed: !links.photoAssetId,
+        has_menu_photo: Boolean(links.photoAssetId),
+        claim_recheck: /\b(most[\s-]?ordered|#1|number\s*one|top[\s-]?seller|best[\s-]?seller)\b/i.test(
+          `${hook}\n${caption}`,
+        ),
         pillar,
         hook,
         phase: 1,
