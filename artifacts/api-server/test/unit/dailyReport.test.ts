@@ -6,12 +6,17 @@ import {
   parseTopProductRows,
 } from "../../src/lib/squareReporting";
 import { renderDailyReportHtml } from "../../src/lib/dailyReportHtml";
-import type { DailyReportPayload } from "../../src/lib/dailyReportAssemble";
+import {
+  buildAttentionLine,
+  buildFactInsights,
+  type DailyReportPayload,
+} from "../../src/lib/dailyReportAssemble";
 import {
   buildSupplyUsageFromProducts,
   classifySupplyItem,
   formatSupplyReminderLine,
 } from "../../src/lib/dailyReportSupply";
+import { pickRotatedPraiseQuotes } from "../../src/lib/dailyReportOrderly";
 import { parseDailyReportOutput } from "../../src/lib/ai/guardrails";
 
 function emptyExtras(): Pick<
@@ -31,6 +36,7 @@ function emptyExtras(): Pick<
       pendingApproval: 0,
       posted: 0,
       highlights: [],
+      clickAnomalies: [],
     },
     gbp: {
       available: false,
@@ -207,6 +213,7 @@ describe("daily report Phase 1 / narrative v2", () => {
         quotes: [],
         urgent: [],
         unanswered: [],
+        unansweredQuestions: 0,
       },
       ...emptyExtras(),
       insights: ["Fact-only insight"],
@@ -219,9 +226,11 @@ describe("daily report Phase 1 / narrative v2", () => {
     expect(html).toContain("$62.51");
     expect(html).not.toContain("blockchain");
     expect(html).toContain("Verified");
+    expect(html).toContain("Sales yesterday (all channels)");
+    expect(html).toContain("MANAGER NOTE");
     expect(html).toContain("ONE IDEA FOR TODAY");
-    expect(html).toContain("Numbers detail");
-    expect(html).toContain("QR scans yesterday");
+    // Numbers first: sales heading appears before manager note.
+    expect(html.indexOf("Sales yesterday")).toBeLessThan(html.indexOf("MANAGER NOTE"));
   });
 
   test("HTML shows supply reminder and unanswered highlight", () => {
@@ -258,7 +267,7 @@ describe("daily report Phase 1 / narrative v2", () => {
       reputation: {
         buckets: {
           praise: 0,
-          question: 1,
+          question: 6,
           complaint: 0,
           allergy_health: 0,
           other: 0,
@@ -272,9 +281,44 @@ describe("daily report Phase 1 / narrative v2", () => {
             platform: "facebook",
             status: "new",
           },
+          {
+            classification: "question",
+            excerpt: "Hours?",
+            platform: "facebook",
+            status: "drafted",
+          },
+          {
+            classification: "question",
+            excerpt: "Parking?",
+            platform: "instagram",
+            status: "new",
+          },
+          {
+            classification: "praise",
+            excerpt: "Great!",
+            platform: "facebook",
+            status: "new",
+          },
         ],
+        unansweredQuestions: 3,
       },
       ...emptyExtras(),
+      socialPosts: {
+        drafted: 0,
+        pendingApproval: 0,
+        posted: 1,
+        highlights: [],
+        clickAnomalies: [
+          {
+            itemName: "Shrimp Bento",
+            platform: "facebook",
+            srcTag: "fb-shrimpbento-20260715",
+            clicks: 30,
+            orders: 0,
+            revenueCents: 0,
+          },
+        ],
+      },
       supplyReminder:
         "Used this week (from sales): ~237 drink cups, ~121 bento boxes. Check supply stock before you run out.",
       supplyUsage: [
@@ -288,7 +332,7 @@ describe("daily report Phase 1 / narrative v2", () => {
       narrative: {
         greeting: "Good morning — here’s Demo Resto for 2026-07-16.",
         body: "Yesterday you rang $1,692.01 across 49 orders.",
-        attention: "1 inbox message(s) still unanswered.",
+        attention: "6 questions yesterday · 4 still unanswered (3 of them questions).",
         ideaForToday: "Promote Hibachi Chicken before 6 PM.",
         source: "ai",
       },
@@ -297,10 +341,87 @@ describe("daily report Phase 1 / narrative v2", () => {
     };
     const html = renderDailyReportHtml(payload);
     expect(html).toContain("NEEDS ATTENTION");
-    expect(html).toContain("unanswered");
+    expect(html).toContain("6 questions yesterday · 4 still unanswered");
+    expect(html).toContain("Questions 6 (4 unanswered)");
+    expect(html).toContain("CLICK → ORDER GAP");
+    expect(html).toContain("30 clicks → 0 orders");
     expect(html).toContain("SUPPLY REMINDER");
     expect(html).toContain("~237 drink cups");
     expect(html).toContain("Narrative by AI Gateway");
     expect(html).toContain("Tips $120.00");
+  });
+
+  test("buildAttentionLine aligns questions with unanswered", () => {
+    const line = buildAttentionLine({
+      buckets: {
+        praise: 5,
+        question: 6,
+        complaint: 0,
+        allergy_health: 0,
+        other: 0,
+      },
+      quotes: [],
+      urgent: [],
+      unanswered: [
+        { classification: "question", excerpt: "a", platform: "fb", status: "new" },
+        { classification: "question", excerpt: "b", platform: "fb", status: "new" },
+        { classification: "question", excerpt: "c", platform: "fb", status: "new" },
+        { classification: "praise", excerpt: "d", platform: "fb", status: "new" },
+      ],
+      unansweredQuestions: 3,
+    });
+    expect(line).toContain("6 questions yesterday · 4 still unanswered");
+    expect(line).toContain("3 of them questions");
+  });
+
+  test("click anomaly becomes top fact insight", () => {
+    const insights = buildFactInsights({
+      topProducts: [
+        { name: "Hibachi Chicken", quantity: 146, netSalesCents: 167556 },
+      ],
+      peakHour: 18,
+      day: null,
+      avg7d: null,
+      orderlyChannels: [],
+      supplyReminder: "",
+      restaurantName: "Demo",
+      reportDate: "2026-07-16",
+      timeZone: "America/Indiana/Indianapolis",
+      socialPosts: {
+        drafted: 0,
+        pendingApproval: 0,
+        posted: 1,
+        highlights: [],
+        clickAnomalies: [
+          {
+            itemName: "Shrimp Bento",
+            platform: "facebook",
+            srcTag: "fb-shrimpbento",
+            clicks: 30,
+            orders: 0,
+            revenueCents: 0,
+          },
+        ],
+      },
+    });
+    expect(insights[0]).toContain("Shrimp Bento");
+    expect(insights[0]).toContain("30 clicks → 0 orders");
+    expect(insights[0]).toContain("Hibachi Chicken");
+  });
+
+  test("praise quote rotation dedupes and reduces count", () => {
+    const pool = [
+      { classification: "praise", excerpt: "Loved it!", platform: "fb" },
+      { classification: "praise", excerpt: "Loved it!", platform: "ig" },
+      { classification: "praise", excerpt: "Delicious bento", platform: "fb" },
+      { classification: "praise", excerpt: "Favorite!", platform: "fb" },
+    ];
+    const a = pickRotatedPraiseQuotes(pool, "2026-07-16", 2);
+    const b = pickRotatedPraiseQuotes(pool, "2026-07-17", 2);
+    expect(a.length).toBeLessThanOrEqual(2);
+    expect(new Set(a.map((q) => q.excerpt.toLowerCase())).size).toBe(a.length);
+    // Different days should often rotate start (not required equal, but pool allows shift).
+    expect(pickRotatedPraiseQuotes(pool.slice(0, 1), "2026-07-16", 2)).toHaveLength(1);
+    expect(a.length + b.length).toBeGreaterThan(0);
   });
 });

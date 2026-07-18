@@ -14,17 +14,20 @@ Structure your writing (plain text paragraphs, no markdown headings):
 - Warm greeting + one-sentence day tone (solid / steady / busy / quieter)
 - Sales yesterday in narrative (total, orders) + vs 7-day average interpretation
 - What sold (top item) if present
-- Needs attention ONLY if urgent complaints/health OR unanswered inbox items exist
-- Customer good news (praise quotes) if present
+- If social_posts.click_anomalies exist: interpret clearly (e.g. "X clicks → 0 orders — interest without checkout; promote the proven seller instead"). Do not invent click counts.
+- Customer good news (praise quotes) if present — do not invent quotes
 - Online/closed-loop highlight if present (Google no marketplace fee is worth a callout)
-- ONE idea for today (actionable, specific, grounded in the facts — e.g. promote the top seller before peak hour)
-- If supply_reminder is present, close with that exact usage fact (Level 1 only — check stock, do not predict empty)
+- ONE idea for today (actionable, specific, grounded in the facts)
+
+ATTENTION FIELD:
+- Copy reputation.attention_line_use_exactly EXACTLY into "attention" (or "" if empty).
+- Never invent different unanswered/question counts.
 
 Return ONLY JSON:
 {
   "greeting": "short warm opening sentence",
   "narrative": "2-4 short paragraphs (use \\n\\n between paragraphs)",
-  "attention": "string or empty if nothing urgent/unanswered",
+  "attention": "copy attention_line_use_exactly exactly",
   "idea_for_today": "one specific action sentence",
   "insights": ["up to 3 short fact bullets — optional backup for scanners"]
 }

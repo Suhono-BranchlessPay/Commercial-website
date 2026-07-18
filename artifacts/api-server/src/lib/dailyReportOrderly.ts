@@ -41,18 +41,23 @@ export type QrScanDaySummary = {
   bySrc: { src: string; human: number; bot: number }[];
 };
 
+export type SocialPostHighlight = {
+  itemName: string;
+  platform: string;
+  srcTag: string;
+  clicks: number;
+  orders: number;
+  revenueCents: number;
+};
+
 export type SocialPostsDaySummary = {
   drafted: number;
   pendingApproval: number;
   posted: number;
   /** Posted rows with cached closed-loop metrics (facts only). */
-  highlights: {
-    itemName: string;
-    platform: string;
-    clicks: number;
-    orders: number;
-    revenueCents: number;
-  }[];
+  highlights: SocialPostHighlight[];
+  /** High clicks + zero paid orders (recent posts) — fact anomalies for insight. */
+  clickAnomalies: SocialPostHighlight[];
 };
 
 export type UnansweredInboxItem = {
@@ -139,6 +144,33 @@ export async function fetchOrderlyChannelAttribution(input: {
 
 const UNANSWERED_STATUSES = ["new", "drafted", "pending_approval"] as const;
 
+/** Day-seeded rotation so the same praise quotes don't repeat every morning. */
+export function pickRotatedPraiseQuotes(
+  candidates: ReputationQuote[],
+  reportDate: string,
+  max = 2,
+): ReputationQuote[] {
+  const seen = new Set<string>();
+  const unique: ReputationQuote[] = [];
+  for (const q of candidates) {
+    const key = q.excerpt.toLowerCase().replace(/\s+/g, " ").trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(q);
+  }
+  if (!unique.length) return [];
+  // Fewer quotes when the pool is small (no padding with repeats).
+  const cap = Math.min(max, unique.length === 1 ? 1 : unique.length <= 2 ? unique.length : max);
+  let seed = 0;
+  for (let i = 0; i < reportDate.length; i++) seed = (seed + reportDate.charCodeAt(i) * (i + 1)) % 997;
+  const start = unique.length ? seed % unique.length : 0;
+  const out: ReputationQuote[] = [];
+  for (let i = 0; i < unique.length && out.length < cap; i++) {
+    out.push(unique[(start + i) % unique.length]!);
+  }
+  return out;
+}
+
 export async function fetchOrderlyReputation(input: {
   tenantId: string;
   localDate: string;
@@ -148,8 +180,15 @@ export async function fetchOrderlyReputation(input: {
   quotes: ReputationQuote[];
   urgent: ReputationQuote[];
   unanswered: UnansweredInboxItem[];
+  unansweredQuestions: number;
 }> {
   const { from, to } = dayBoundsUtc(input.localDate, input.timeZone);
+  // Wider praise pool (7d) for rotation; buckets/unanswered stay on report day.
+  const weekStart = wallTimeToUtc(
+    `${addLocalDays(input.localDate, -6)}T00:00:00`,
+    input.timeZone,
+  );
+
   const rows = await db
     .select()
     .from(socialInboxTable)
@@ -157,12 +196,12 @@ export async function fetchOrderlyReputation(input: {
       and(
         eq(socialInboxTable.tenantId, input.tenantId),
         eq(socialInboxTable.direction, "in"),
-        gte(socialInboxTable.createdAt, from),
+        gte(socialInboxTable.createdAt, weekStart),
         lte(socialInboxTable.createdAt, to),
       ),
     )
     .orderBy(desc(socialInboxTable.createdAt))
-    .limit(100);
+    .limit(200);
 
   const buckets: ReputationBucket = {
     praise: 0,
@@ -171,18 +210,24 @@ export async function fetchOrderlyReputation(input: {
     allergy_health: 0,
     other: 0,
   };
-  const quotes: ReputationQuote[] = [];
+  const praisePool: ReputationQuote[] = [];
   const urgent: ReputationQuote[] = [];
   const unanswered: UnansweredInboxItem[] = [];
+  let unansweredQuestions = 0;
 
   for (const r of rows) {
+    const created = r.createdAt ? new Date(r.createdAt).getTime() : 0;
+    const onReportDay = created >= from.getTime() && created <= to.getTime();
     const cls = String(r.classification || "unknown").toLowerCase();
     const status = String(r.status || "new").toLowerCase();
-    if (cls === "praise") buckets.praise += 1;
-    else if (cls === "question") buckets.question += 1;
-    else if (cls === "complaint") buckets.complaint += 1;
-    else if (cls === "allergy_health") buckets.allergy_health += 1;
-    else buckets.other += 1;
+
+    if (onReportDay) {
+      if (cls === "praise") buckets.praise += 1;
+      else if (cls === "question") buckets.question += 1;
+      else if (cls === "complaint") buckets.complaint += 1;
+      else if (cls === "allergy_health") buckets.allergy_health += 1;
+      else buckets.other += 1;
+    }
 
     const excerpt = String(r.body || "").trim().slice(0, 160);
     if (!excerpt) continue;
@@ -192,15 +237,17 @@ export async function fetchOrderlyReputation(input: {
       platform: String(r.platform || "social"),
       status,
     };
-    if (cls === "complaint" || cls === "allergy_health") {
+    if (onReportDay && (cls === "complaint" || cls === "allergy_health")) {
       urgent.push(q);
-    } else if (cls === "praise" && quotes.length < 3) {
-      quotes.push(q);
+    }
+    if (cls === "praise") {
+      praisePool.push(q);
     }
 
     if (
+      onReportDay &&
       (UNANSWERED_STATUSES as readonly string[]).includes(status) &&
-      unanswered.length < 8
+      unanswered.length < 12
     ) {
       unanswered.push({
         classification: cls,
@@ -208,10 +255,22 @@ export async function fetchOrderlyReputation(input: {
         platform: String(r.platform || "social"),
         status,
       });
+      if (cls === "question") unansweredQuestions += 1;
     }
   }
 
-  return { buckets, quotes, urgent, unanswered };
+  const quotes = pickRotatedPraiseQuotes(praisePool, input.localDate, 2);
+  return { buckets, quotes, urgent, unanswered, unansweredQuestions };
+}
+
+function addLocalDays(isoDate: string, delta: number): string {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const utc = Date.UTC(y, m - 1, d, 12, 0, 0) + delta * 24 * 60 * 60 * 1000;
+  const dt = new Date(utc);
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
 }
 
 export async function fetchOrderlyQrScans(input: {
@@ -270,8 +329,12 @@ export async function fetchOrderlySocialPosts(input: {
   timeZone: string;
 }): Promise<SocialPostsDaySummary> {
   const { from, to } = dayBoundsUtc(input.localDate, input.timeZone);
+  const lookbackFrom = wallTimeToUtc(
+    `${addLocalDays(input.localDate, -13)}T00:00:00`,
+    input.timeZone,
+  );
 
-  const [statusRows, postedRows] = await Promise.all([
+  const [statusRows, postedRows, recentPosted] = await Promise.all([
     db
       .select({
         status: socialPostsTable.status,
@@ -299,6 +362,19 @@ export async function fetchOrderlySocialPosts(input: {
       )
       .orderBy(desc(socialPostsTable.postedAt))
       .limit(5),
+    db
+      .select()
+      .from(socialPostsTable)
+      .where(
+        and(
+          eq(socialPostsTable.tenantId, input.tenantId),
+          eq(socialPostsTable.status, "posted"),
+          gte(socialPostsTable.postedAt, lookbackFrom),
+          lte(socialPostsTable.postedAt, to),
+        ),
+      )
+      .orderBy(desc(socialPostsTable.clicks))
+      .limit(40),
   ]);
 
   let drafted = 0;
@@ -311,20 +387,34 @@ export async function fetchOrderlySocialPosts(input: {
     else if (st === "pending_approval" || st === "approved") pendingApproval += n;
     else if (st === "posted") posted += n;
   }
-  // Prefer postedAt window count when available.
   if (postedRows.length) posted = Math.max(posted, postedRows.length);
+
+  const toHighlight = (p: (typeof recentPosted)[number]): SocialPostHighlight => ({
+    itemName: p.menuItemName,
+    platform: p.platform,
+    srcTag: p.srcTag || "",
+    clicks: p.clicks ?? 0,
+    orders: p.orders ?? 0,
+    revenueCents: p.revenueCents ?? 0,
+  });
+
+  const highlights = (postedRows.length ? postedRows : recentPosted.slice(0, 5)).map(
+    toHighlight,
+  );
+
+  // Fact anomaly: many human clicks, zero attributed paid orders (not a forecast).
+  const clickAnomalies = recentPosted
+    .map(toHighlight)
+    .filter((h) => h.clicks >= 8 && h.orders === 0)
+    .sort((a, b) => b.clicks - a.clicks)
+    .slice(0, 3);
 
   return {
     drafted,
     pendingApproval,
     posted,
-    highlights: postedRows.map((p) => ({
-      itemName: p.menuItemName,
-      platform: p.platform,
-      clicks: p.clicks ?? 0,
-      orders: p.orders ?? 0,
-      revenueCents: p.revenueCents ?? 0,
-    })),
+    highlights,
+    clickAnomalies,
   };
 }
 
