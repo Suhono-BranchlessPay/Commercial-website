@@ -17,8 +17,8 @@
 | Table `kitchen_settings` + seed Samurai | ✅ LIVE (ops 18 Jul) |
 | Client owner login seed | ✅ LIVE (ops 18 Jul) |
 | `GET /api/kitchen/estimate` | ✅ LIVE (`10–20 min` @ 15 min prep) |
-| Storefront pickup estimate UI + pause banner | ✅ code (deploy with follow-up PR) |
-| Square `prep_time_duration` from kitchen settings | ✅ code (deploy with follow-up PR) |
+| Storefront pickup estimate UI + pause banner | ✅ LIVE (PR #78 deployed) |
+| Square `prep_time_duration` from kitchen settings | ✅ LIVE (PR #78 deployed) |
 | Full Big Business `/client` reporting | ⏸️ deferred by design |
 | Customer real-time status page | ⏸️ deferred by design |
 | Cancel → auto-refund | ⏸️ deferred by design (safety) |
@@ -62,7 +62,7 @@
 |------|--------|
 | `https://samurairesto.com/client` | ✅ HTTP 200 — owner login + summary + kitchen settings |
 | `https://samurairesto.com/kds` | ✅ HTTP 200 — kanban, timers, sound, wake lock, polling |
-| Storefront shows estimate from `/api/kitchen/estimate` | ✅ implemented in `order.tsx` (deploy follow-up) |
+| Storefront shows estimate from `/api/kitchen/estimate` | ✅ LIVE on `/order` checkout |
 
 ### 5. Deploy (instruction §3)
 
