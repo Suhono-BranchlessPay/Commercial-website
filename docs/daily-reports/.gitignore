@@ -1,0 +1,5 @@
+# Business metrics / PII — keep local or VPS only
+*.json
+*.html
+!README.md
+!TRIAL_*.md

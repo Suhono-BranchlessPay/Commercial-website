@@ -63,14 +63,24 @@ curl -sS -X POST "https://samurairesto.com/api/internal/daily-report/run" \
 | Cron 4am | `…/dailyReportCron.ts` |
 | Trigger | `…/routes/dailyReport.ts` |
 
+## Status live (17 Jul 2026 malam)
+
+- [x] PR #68 merged · VPS `samurai-resto` @ `16bf944` · API rebuilt
+- [x] Square Reporting A + B **200** (real Samurai data)
+- [x] Preview HTML/JSON generated for **2026-07-16** (lihat `docs/daily-reports/TRIAL_Samurai_2026-07-16.md`)
+- [x] Anti double-count di HTML (Orderly subset terpisah)
+- [x] `DAILY_REPORT_CRON_SECRET` di ecosystem VPS (file `/tmp/daily-report-secret.txt`)
+- [ ] **Email:** set `RESEND_API_KEY` + `DAILY_REPORT_TO` + `DAILY_REPORT_FROM`, lalu POST `/api/internal/daily-report/run`
+- [ ] `DAILY_REPORT_ENABLED=1` untuk cron 4am (setelah email proven)
+
 ## Definisi selesai Fase 1 (checklist)
 
-- [ ] REPORTING_READ / token bisa query A,B,C (data nyata)
-- [ ] Preview HTML menampilkan penjualan + produk + tren
-- [ ] Email terkirim ke Malik (trial)
-- [ ] Anti double-count terlihat di copy
-- [ ] Per-tenant env (bukan hardcode email di kode)
-- [ ] CI + Bugbot hijau
+- [x] REPORTING_READ / token bisa query A,B,C (data nyata)
+- [x] Preview HTML menampilkan penjualan + produk + tren
+- [ ] Email terkirim ke Malik (trial) — tunggu Resend + alamat
+- [x] Anti double-count terlihat di copy
+- [x] Per-tenant env (bukan hardcode email di kode)
+- [x] CI + Bugbot hijau (#68)
 
 ## Belum di Day 1 (bertahap)
 
