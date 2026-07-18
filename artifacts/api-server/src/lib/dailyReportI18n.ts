@@ -47,6 +47,10 @@ export type DailyReportUi = {
   clickOrderGapNote: string;
   contentCalendarTitle: string;
   contentCalendarNote: (days: number) => string;
+  /** Softer gap copy when attribution DQ flags apply. */
+  clickOrderGapIncomplete: string;
+  clickOrderGapNoteIncomplete: string;
+  dataQualityBanner: string;
   reputation: string;
   praise: string;
   questions: string;
@@ -99,6 +103,10 @@ const EN: DailyReportUi = {
   contentCalendarTitle: "Content calendar (Orderly)",
   contentCalendarNote: (days) =>
     `Posted in last ${days} days — multi-day lookback (not same-day). Human clicks + paid orders by src.`,
+  clickOrderGapIncomplete: "CLICK → ORDER GAP (DATA INCOMPLETE)",
+  clickOrderGapNoteIncomplete:
+    "Attribution was incomplete this day (bare FB links / late fbclid fallback). Do not treat this gap as campaign failure.",
+  dataQualityBanner: "DATA QUALITY",
   reputation: "Reputation",
   praise: "Praise",
   questions: "Questions",
@@ -157,6 +165,10 @@ const ID: DailyReportUi = {
   contentCalendarTitle: "Kalender konten (Orderly)",
   contentCalendarNote: (days) =>
     `Post ${days} hari terakhir — lookback multi-hari (bukan same-day). Klik manusia + order berbayar by src.`,
+  clickOrderGapIncomplete: "KLIK → ORDER (DATA TIDAK LENGKAP)",
+  clickOrderGapNoteIncomplete:
+    "Atribusi belum lengkap hari ini (link FB polos / fallback fbclid belakangan). Jangan anggap gap ini = kampanye gagal.",
+  dataQualityBanner: "KUALITAS DATA",
   reputation: "Reputasi",
   praise: "Pujian",
   questions: "Pertanyaan",
@@ -216,6 +228,10 @@ const ES: DailyReportUi = {
   contentCalendarTitle: "Calendario de contenido (Orderly)",
   contentCalendarNote: (days) =>
     `Publicados en ${days} días — lookback multi-día (no mismo día). Clics humanos + pedidos pagados por src.`,
+  clickOrderGapIncomplete: "CLICS → PEDIDOS (DATOS INCOMPLETOS)",
+  clickOrderGapNoteIncomplete:
+    "La atribución estaba incompleta este día (enlaces FB sin ?src= / fallback fbclid tarde). No trate esta brecha como fracaso de campaña.",
+  dataQualityBanner: "CALIDAD DE DATOS",
   reputation: "Reputación",
   praise: "Elogios",
   questions: "Preguntas",
