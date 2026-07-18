@@ -2,6 +2,8 @@
  * Manual / trial trigger for daily report (not on the money path).
  * POST /api/internal/daily-report/run
  * Header: X-Daily-Report-Secret: $DAILY_REPORT_CRON_SECRET
+ *
+ * Body/query locale: en | id | es (trial multilingual owner email).
  */
 import { Router, type IRouter } from "express";
 import {
@@ -11,6 +13,7 @@ import {
 } from "../lib/dailyReportRun";
 import { assembleDailyReport } from "../lib/dailyReportAssemble";
 import { renderDailyReportHtml } from "../lib/dailyReportHtml";
+import { normalizeDailyReportLocale } from "../lib/dailyReportI18n";
 
 const router: IRouter = Router();
 
@@ -19,6 +22,11 @@ function authorize(req: { headers: Record<string, unknown> }): boolean {
   if (!expected) return false;
   const got = String(req.headers["x-daily-report-secret"] ?? "");
   return got.length > 0 && got === expected;
+}
+
+function pickLocale(raw: unknown): string | undefined {
+  if (typeof raw !== "string" || !raw.trim()) return undefined;
+  return normalizeDailyReportLocale(raw);
 }
 
 router.post("/internal/daily-report/run", async (req, res): Promise<void> => {
@@ -31,6 +39,7 @@ router.post("/internal/daily-report/run", async (req, res): Promise<void> => {
     typeof req.body?.reportDate === "string" ? req.body.reportDate : undefined;
   const slug =
     typeof req.body?.tenantSlug === "string" ? req.body.tenantSlug.trim() : "";
+  const locale = pickLocale(req.body?.locale ?? req.body?.language);
 
   if (slug) {
     const cfg = parseDailyReportTenants().find((t) => t.slug === slug) ?? {
@@ -42,12 +51,19 @@ router.post("/internal/daily-report/run", async (req, res): Promise<void> => {
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean),
+      locale: process.env.DAILY_REPORT_LOCALE?.trim()
+        ? normalizeDailyReportLocale(process.env.DAILY_REPORT_LOCALE)
+        : undefined,
     };
     if (!cfg.to.length && !dryRun) {
       res.status(400).json({ error: "no_recipients", hint: "Set DAILY_REPORT_TO" });
       return;
     }
-    const result = await runDailyReportForTenant(cfg, { reportDate, dryRun });
+    const result = await runDailyReportForTenant(cfg, {
+      reportDate,
+      dryRun,
+      locale,
+    });
     res.json({ ok: !result.error || dryRun, result });
     return;
   }
@@ -55,6 +71,7 @@ router.post("/internal/daily-report/run", async (req, res): Promise<void> => {
   const results = await runDailyReportsForConfiguredTenants({
     reportDate,
     dryRun,
+    locale,
   });
   res.json({ ok: true, results });
 });
@@ -71,10 +88,12 @@ router.get("/internal/daily-report/preview", async (req, res): Promise<void> => 
     "America/Indiana/Indianapolis";
   const reportDate =
     typeof req.query.reportDate === "string" ? req.query.reportDate : undefined;
+  const locale = pickLocale(req.query.locale ?? req.query.language);
   const payload = await assembleDailyReport({
     tenantSlug: slug,
     timeZone,
     reportDate,
+    locale,
   });
   if (!payload) {
     res.status(404).json({ error: "tenant_not_found" });

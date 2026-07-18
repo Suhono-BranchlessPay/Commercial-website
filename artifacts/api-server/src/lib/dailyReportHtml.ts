@@ -1,4 +1,9 @@
 import type { DailyReportPayload } from "./dailyReportAssemble";
+import {
+  getDailyReportUi,
+  normalizeDailyReportLocale,
+  type DailyReportLocale,
+} from "./dailyReportI18n";
 
 function esc(s: string): string {
   return s
@@ -8,18 +13,24 @@ function esc(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function money(cents: number): string {
+/** USD display stays en-US grouping; locale only changes copy, not currency format. */
+function money(cents: number, _locale: DailyReportLocale): string {
   return `$${(cents / 100).toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
 }
 
-function pctDelta(day: number, avg: number): string {
+function pctDelta(
+  day: number,
+  avg: number,
+  locale: DailyReportLocale,
+): string {
+  const ui = getDailyReportUi(locale);
   if (!avg) return "—";
   const pct = Math.round(((day - avg) / avg) * 100);
   const sign = pct > 0 ? "+" : "";
-  return `${sign}${pct}% vs 7-day avg`;
+  return ui.vs7day(`${sign}${pct}`);
 }
 
 function sparkline(values: number[]): string {
@@ -42,8 +53,12 @@ function sparkline(values: number[]): string {
 function hourBars(
   hours: { hour: number; orderCount: number }[],
   peak: number | null,
+  locale: DailyReportLocale,
 ): string {
-  if (!hours.length) return "<p style=\"color:#6b7280;font-size:13px\">No hour data</p>";
+  const ui = getDailyReportUi(locale);
+  if (!hours.length) {
+    return `<p style="color:#6b7280;font-size:13px">${esc(ui.noHourData)}</p>`;
+  }
   const max = Math.max(...hours.map((h) => h.orderCount), 1);
   const cells = hours
     .map((h) => {
@@ -68,6 +83,8 @@ function paragraphsHtml(text: string): string {
 }
 
 export function renderDailyReportHtml(p: DailyReportPayload): string {
+  const locale = normalizeDailyReportLocale(p.locale);
+  const ui = getDailyReportUi(locale);
   const day = p.day;
   const avg = p.avg7d;
 
@@ -75,7 +92,7 @@ export function renderDailyReportHtml(p: DailyReportPayload): string {
   const urgentHtml =
     attentionText || p.reputation.urgent.length
       ? `<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:14px 16px;margin:0 0 16px">
-          <div style="color:#991B1B;font-weight:800;font-size:13px;letter-spacing:0.04em">⚠ NEEDS ATTENTION</div>
+          <div style="color:#991B1B;font-weight:800;font-size:13px;letter-spacing:0.04em">${esc(ui.needsAttention)}</div>
           ${
             attentionText
               ? `<p style="margin:8px 0 0;color:#7F1D1D;font-size:14px;line-height:1.45">${esc(attentionText)}</p>`
@@ -92,10 +109,26 @@ export function renderDailyReportHtml(p: DailyReportPayload): string {
 
   const cards = day
     ? [
-        ["Total sales", money(day.totalSalesCents), avg ? pctDelta(day.totalSalesCents, avg.totalSalesCents) : ""],
-        ["Orders", String(day.orderCount), avg ? pctDelta(day.orderCount, avg.orderCount) : ""],
-        ["Customers", String(day.uniqueCustomers), avg ? pctDelta(day.uniqueCustomers, avg.uniqueCustomers) : ""],
-        ["Avg ticket", money(day.avgNetSalesCents), avg ? pctDelta(day.avgNetSalesCents, avg.avgNetSalesCents) : ""],
+        [
+          ui.totalSales,
+          money(day.totalSalesCents, locale),
+          avg ? pctDelta(day.totalSalesCents, avg.totalSalesCents, locale) : "",
+        ],
+        [
+          ui.orders,
+          String(day.orderCount),
+          avg ? pctDelta(day.orderCount, avg.orderCount, locale) : "",
+        ],
+        [
+          ui.customers,
+          String(day.uniqueCustomers),
+          avg ? pctDelta(day.uniqueCustomers, avg.uniqueCustomers, locale) : "",
+        ],
+        [
+          ui.avgTicket,
+          money(day.avgNetSalesCents, locale),
+          avg ? pctDelta(day.avgNetSalesCents, avg.avgNetSalesCents, locale) : "",
+        ],
       ]
     : [];
 
@@ -118,23 +151,30 @@ export function renderDailyReportHtml(p: DailyReportPayload): string {
         `<tr>
           <td style="padding:8px 0;border-bottom:1px solid #E2E8F0;font-size:14px">${i === 0 ? "⭐ " : ""}${esc(it.name)}</td>
           <td style="padding:8px 0;border-bottom:1px solid #E2E8F0;font-size:14px;text-align:right;color:#64748B">${it.quantity}</td>
-          <td style="padding:8px 0;border-bottom:1px solid #E2E8F0;font-size:14px;text-align:right;font-weight:700">${money(it.netSalesCents)}</td>
+          <td style="padding:8px 0;border-bottom:1px solid #E2E8F0;font-size:14px;text-align:right;font-weight:700">${money(it.netSalesCents, locale)}</td>
         </tr>`,
     )
     .join("");
+
+  const noFeeLabel =
+    locale === "id"
+      ? "tanpa biaya marketplace"
+      : locale === "es"
+        ? "sin comisión marketplace"
+        : "no marketplace fee";
 
   const channels = p.orderlyChannels.length
     ? p.orderlyChannels
         .map(
           (c) =>
             `<tr>
-              <td style="padding:6px 0;font-size:14px">${esc(c.src)}${c.src.includes("google") ? " <span style=\"color:#0F766E;font-size:11px;font-weight:700\">no marketplace fee</span>" : ""}</td>
+              <td style="padding:6px 0;font-size:14px">${esc(c.src)}${c.src.includes("google") ? ` <span style="color:#0F766E;font-size:11px;font-weight:700">${esc(noFeeLabel)}</span>` : ""}</td>
               <td style="padding:6px 0;font-size:14px;text-align:right">${c.orders}</td>
-              <td style="padding:6px 0;font-size:14px;text-align:right;font-weight:700">${money(c.totalCents)}</td>
+              <td style="padding:6px 0;font-size:14px;text-align:right;font-weight:700">${money(c.totalCents, locale)}</td>
             </tr>`,
         )
         .join("")
-    : `<tr><td colspan="3" style="font-size:13px;color:#64748B">No paid online orders attributed yesterday.</td></tr>`;
+    : `<tr><td colspan="3" style="font-size:13px;color:#64748B">${esc(ui.noOnlineOrders)}</td></tr>`;
 
   const insights = p.insights.length
     ? p.insights
@@ -143,27 +183,27 @@ export function renderDailyReportHtml(p: DailyReportPayload): string {
             `<li style="margin:0 0 8px;font-size:14px;color:#0F172A;line-height:1.45">${esc(ins)}</li>`,
         )
         .join("")
-    : `<li style="font-size:13px;color:#64748B">Not enough data for insights today.</li>`;
+    : `<li style="font-size:13px;color:#64748B">${esc(ui.noInsights)}</li>`;
 
   const squareNote = p.squareAvailable
     ? ""
     : `<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:12px;margin:0 0 16px;font-size:13px;color:#92400E">
-        Square data unavailable${p.squareError ? `: ${esc(p.squareError.slice(0, 180))}` : ""}. Showing Orderly attribution / reputation only — totals may be incomplete.
+        ${esc(ui.squareUnavailable(p.squareError ? p.squareError.slice(0, 180) : ""))}
       </div>`;
 
   const tipTax =
     day
-      ? `<p style="font-size:12px;color:#64748B;margin:8px 0 0">Tips ${money(day.tipsCents)} · Tax ${money(day.taxCents)} · Source: Square (all channels)</p>`
+      ? `<p style="font-size:12px;color:#64748B;margin:8px 0 0">${esc(
+          ui.tipsTax(money(day.tipsCents, locale), money(day.taxCents, locale)),
+        )}</p>`
       : "";
 
   const q = p.reputation.buckets.question;
   const uAll = p.reputation.unanswered.length;
   const reputationSummary =
-    `Praise ${p.reputation.buckets.praise} · Questions ${q}` +
-    (q > 0 || uAll > 0
-      ? ` (${uAll} unanswered)`
-      : "") +
-    ` · Complaints ${p.reputation.buckets.complaint} · Health/allergy ${p.reputation.buckets.allergy_health}`;
+    `${ui.praise} ${p.reputation.buckets.praise} · ${ui.questions} ${q}` +
+    (q > 0 || uAll > 0 ? ` ${ui.unansweredParen(uAll)}` : "") +
+    ` · ${ui.complaints} ${p.reputation.buckets.complaint} · ${ui.healthAllergy} ${p.reputation.buckets.allergy_health}`;
 
   const praiseHtml = p.reputation.quotes.length
     ? p.reputation.quotes
@@ -172,92 +212,100 @@ export function renderDailyReportHtml(p: DailyReportPayload): string {
             `<p style="font-size:13px;color:#475569;margin:8px 0 0">“${esc(qot.excerpt)}” <span style="color:#94A3B8">— ${esc(qot.classification)}</span></p>`,
         )
         .join("")
-    : `<p style="font-size:13px;color:#64748B;margin:0">No new praise quotes to show today.</p>`;
+    : `<p style="font-size:13px;color:#64748B;margin:0">${esc(ui.noPraise)}</p>`;
 
   const anomalyHtml = p.socialPosts.clickAnomalies.length
     ? `<div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:10px;padding:12px 14px;margin:16px 0 0">
-        <div style="color:#9A3412;font-weight:800;font-size:12px;letter-spacing:0.04em">CLICK → ORDER GAP</div>
+        <div style="color:#9A3412;font-weight:800;font-size:12px;letter-spacing:0.04em">${esc(ui.clickOrderGap)}</div>
         ${p.socialPosts.clickAnomalies
-          .map(
-            (a) =>
-              `<p style="margin:6px 0 0;font-size:13px;color:#7C2D12">${esc(a.itemName)}: <strong>${a.clicks} clicks → ${a.orders} orders</strong>${a.srcTag ? ` <span style="color:#9A3412">(${esc(a.srcTag)})</span>` : ""}</p>`,
-          )
+          .map((a) => {
+            const gap =
+              locale === "id"
+                ? `${a.clicks} klik → ${a.orders} pesanan`
+                : locale === "es"
+                  ? `${a.clicks} clics → ${a.orders} pedidos`
+                  : `${a.clicks} clicks → ${a.orders} orders`;
+            return `<p style="margin:6px 0 0;font-size:13px;color:#7C2D12">${esc(a.itemName)}: <strong>${esc(gap)}</strong>${a.srcTag ? ` <span style="color:#9A3412">(${esc(a.srcTag)})</span>` : ""}</p>`;
+          })
           .join("")}
-        <p style="margin:6px 0 0;font-size:11px;color:#9A3412">Interest without checkout — promote what already sells. Some clicks may be influencer/share traffic (separate tracking later).</p>
+        <p style="margin:6px 0 0;font-size:11px;color:#9A3412">${esc(ui.clickGapHint)}</p>
       </div>`
     : "";
 
   const supplyHtml = p.supplyReminder
     ? `<div style="background:#F0FDFA;border:1px solid #99F6E4;border-radius:10px;padding:14px 16px;margin:20px 0 0">
-        <div style="color:#0F766E;font-weight:800;font-size:13px;letter-spacing:0.04em">SUPPLY REMINDER (from sales)</div>
+        <div style="color:#0F766E;font-weight:800;font-size:13px;letter-spacing:0.04em">${esc(ui.supplyReminder)}</div>
         <p style="margin:8px 0 0;color:#134E4A;font-size:14px;line-height:1.45">${esc(p.supplyReminder)}</p>
-        <p style="margin:6px 0 0;font-size:11px;color:#64748B">Level 1 — usage from weekly sales only. Not a prediction of days remaining.</p>
+        <p style="margin:6px 0 0;font-size:11px;color:#64748B">${esc(ui.supplyLevelNote)}</p>
       </div>`
     : "";
 
+  const narrativeFooter =
+    p.narrative.source === "ai" ? ui.narrativeAi : ui.narrativeFacts;
+
   // Numbers-first layout: owner scans cards/charts in <30s; narrative is a short note after.
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${esc(locale)}">
 <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
 <body style="margin:0;padding:0;background:#F1F5F9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
   <div style="max-width:640px;margin:0 auto;padding:24px 16px">
     <div style="background:#fff;border-radius:16px;padding:24px;border:1px solid #E2E8F0">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
         <div>
-          <div style="font-size:11px;font-weight:800;letter-spacing:0.08em;color:#0F766E">ORDERLY DAILY</div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:0.08em;color:#0F766E">${esc(ui.brand)}</div>
           <h1 style="margin:6px 0 0;font-size:22px;color:#0F172A">${esc(p.restaurantName)}</h1>
-          <p style="margin:4px 0 0;color:#64748B;font-size:13px">${esc(p.reportDate)} · ${esc(p.timeZone)}</p>
+          <p style="margin:4px 0 0;color:#64748B;font-size:13px">${esc(p.reportDate)} · ${esc(p.timeZone)} · ${esc(locale.toUpperCase())}</p>
         </div>
-        <div style="font-size:11px;font-weight:700;color:#0F766E;border:1px solid #99F6E4;background:#F0FDFA;border-radius:999px;padding:6px 10px">Verified</div>
+        <div style="font-size:11px;font-weight:700;color:#0F766E;border:1px solid #99F6E4;background:#F0FDFA;border-radius:999px;padding:6px 10px">${esc(ui.verified)}</div>
       </div>
 
       ${urgentHtml}
       ${squareNote}
 
-      <h2 style="font-size:15px;margin:16px 0 8px;color:#0F172A">Sales yesterday (all channels)</h2>
+      <h2 style="font-size:15px;margin:16px 0 8px;color:#0F172A">${esc(ui.salesYesterday)}</h2>
       ${
         day
           ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cardHtml}</tr></table>${tipTax}`
-          : `<p style="color:#64748B;font-size:14px">No Square daily row for ${esc(p.reportDate)}.</p>`
+          : `<p style="color:#64748B;font-size:14px">${esc(ui.noSquareDay(p.reportDate))}</p>`
       }
 
-      <h2 style="font-size:15px;margin:22px 0 8px;color:#0F172A">7-day trend</h2>
-      ${sparkline(p.trend7d.map((d) => d.totalSalesCents)) || `<p style="color:#64748B;font-size:13px">Trend needs Square data.</p>`}
+      <h2 style="font-size:15px;margin:22px 0 8px;color:#0F172A">${esc(ui.trend7d)}</h2>
+      ${sparkline(p.trend7d.map((d) => d.totalSalesCents)) || `<p style="color:#64748B;font-size:13px">${esc(ui.trendNeedsData)}</p>`}
 
-      <h2 style="font-size:15px;margin:22px 0 8px;color:#0F172A">Busiest hours (last 7 days)</h2>
-      ${hourBars(p.busyHours, p.peakHour)}
+      <h2 style="font-size:15px;margin:22px 0 8px;color:#0F172A">${esc(ui.busiestHours)}</h2>
+      ${hourBars(p.busyHours, p.peakHour, locale)}
       ${
         p.peakHour != null
-          ? `<p style="font-size:12px;color:#64748B;margin:8px 0 0">Peak marked in red · staff before the rush; schedule posts 1–2h earlier.</p>`
+          ? `<p style="font-size:12px;color:#64748B;margin:8px 0 0">${esc(ui.peakHint)}</p>`
           : ""
       }
 
-      <h2 style="font-size:15px;margin:22px 0 8px;color:#0F172A">Top products (last 7 days)</h2>
-      <table width="100%" cellpadding="0" cellspacing="0">${products || `<tr><td style="color:#64748B;font-size:13px">No product mix data.</td></tr>`}</table>
+      <h2 style="font-size:15px;margin:22px 0 8px;color:#0F172A">${esc(ui.topProducts)}</h2>
+      <table width="100%" cellpadding="0" cellspacing="0">${products || `<tr><td style="color:#64748B;font-size:13px">${esc(ui.noProducts)}</td></tr>`}</table>
 
-      <h2 style="font-size:15px;margin:22px 0 4px;color:#0F172A">Online attribution (Orderly)</h2>
-      <p style="font-size:12px;color:#B45309;margin:0 0 8px">Subset of Square — do not add these dollars to the totals above.</p>
+      <h2 style="font-size:15px;margin:22px 0 4px;color:#0F172A">${esc(ui.onlineAttribution)}</h2>
+      <p style="font-size:12px;color:#B45309;margin:0 0 8px">${esc(ui.subsetWarning)}</p>
       <table width="100%" cellpadding="0" cellspacing="0">
         <tr style="color:#64748B;font-size:11px;text-transform:uppercase">
-          <th align="left" style="padding-bottom:6px">Channel / src</th>
-          <th align="right" style="padding-bottom:6px">Orders</th>
-          <th align="right" style="padding-bottom:6px">$</th>
+          <th align="left" style="padding-bottom:6px">${esc(ui.channel)}</th>
+          <th align="right" style="padding-bottom:6px">${esc(ui.orders)}</th>
+          <th align="right" style="padding-bottom:6px">${esc(ui.dollars)}</th>
         </tr>
         ${channels}
       </table>
       ${anomalyHtml}
 
-      <h2 style="font-size:15px;margin:22px 0 8px;color:#0F172A">Reputation</h2>
+      <h2 style="font-size:15px;margin:22px 0 8px;color:#0F172A">${esc(ui.reputation)}</h2>
       <p style="font-size:13px;color:#334155;margin:0">${esc(reputationSummary)}</p>
       ${praiseHtml}
 
-      <h2 style="font-size:15px;margin:22px 0 8px;color:#0F172A">⭐ Insights</h2>
+      <h2 style="font-size:15px;margin:22px 0 8px;color:#0F172A">${esc(ui.insights)}</h2>
       <ul style="padding-left:18px;margin:0">${insights}</ul>
 
       ${
         p.narrative.body
           ? `<div style="margin:22px 0 0;padding-top:16px;border-top:1px solid #E2E8F0">
-              <div style="font-size:12px;font-weight:800;letter-spacing:0.04em;color:#0F766E;margin-bottom:8px">MANAGER NOTE</div>
+              <div style="font-size:12px;font-weight:800;letter-spacing:0.04em;color:#0F766E;margin-bottom:8px">${esc(ui.managerNote)}</div>
               <p style="margin:0 0 8px;font-size:14px;color:#0F172A;font-weight:600">${esc(p.narrative.greeting)}</p>
               ${paragraphsHtml(p.narrative.body)}
             </div>`
@@ -267,7 +315,7 @@ export function renderDailyReportHtml(p: DailyReportPayload): string {
       ${
         p.narrative.ideaForToday
           ? `<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:14px 16px;margin:16px 0 0">
-              <div style="color:#92400E;font-weight:800;font-size:12px;letter-spacing:0.04em">💡 ONE IDEA FOR TODAY</div>
+              <div style="color:#92400E;font-weight:800;font-size:12px;letter-spacing:0.04em">${esc(ui.oneIdea)}</div>
               <p style="margin:8px 0 0;color:#78350F;font-size:14px;line-height:1.45">${esc(p.narrative.ideaForToday)}</p>
             </div>`
           : ""
@@ -276,8 +324,8 @@ export function renderDailyReportHtml(p: DailyReportPayload): string {
       ${supplyHtml}
 
       <p style="margin:24px 0 0;font-size:11px;color:#94A3B8;line-height:1.5">
-        ${esc(p.disclaimer)} · Verified &amp; permanently recorded where orders are anchored.
-        ${p.narrative.source === "ai" ? " · Narrative by AI Gateway (facts only)." : " · Narrative from structured facts (AI unavailable)."}
+        ${esc(p.disclaimer)} · ${esc(ui.recorded)}
+        · ${esc(narrativeFooter)}
       </p>
     </div>
   </div>
@@ -286,6 +334,8 @@ export function renderDailyReportHtml(p: DailyReportPayload): string {
 }
 
 export function renderDailyReportSubject(p: DailyReportPayload): string {
-  const total = p.day ? money(p.day.totalSalesCents) : "update";
-  return `${p.restaurantName} · ${p.reportDate} · ${total}`;
+  const locale = normalizeDailyReportLocale(p.locale);
+  const ui = getDailyReportUi(locale);
+  const total = p.day ? money(p.day.totalSalesCents, locale) : ui.subjectUpdate;
+  return `${p.restaurantName} · ${p.reportDate} · ${total} · ${locale.toUpperCase()}`;
 }

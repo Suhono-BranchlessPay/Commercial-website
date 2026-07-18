@@ -64,3 +64,4 @@ artifacts/api-server/uploads/
 # Blok 0 — VPS PM2 process config often carries real env values inline;
 # never commit it. Deploy scripts should write this file on the VPS itself.
 ecosystem.config.cjs
+artifacts/daily-report-i18n-trial/

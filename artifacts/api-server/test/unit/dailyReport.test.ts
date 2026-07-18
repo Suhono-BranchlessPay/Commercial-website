@@ -5,7 +5,10 @@ import {
   parseDailySalesRows,
   parseTopProductRows,
 } from "../../src/lib/squareReporting";
-import { renderDailyReportHtml } from "../../src/lib/dailyReportHtml";
+import {
+  renderDailyReportHtml,
+  renderDailyReportSubject,
+} from "../../src/lib/dailyReportHtml";
 import {
   buildAttentionLine,
   buildFactInsights,
@@ -16,8 +19,13 @@ import {
   classifySupplyItem,
   formatSupplyReminderLine,
 } from "../../src/lib/dailyReportSupply";
+import {
+  formatSupplyReminderLocalized,
+  normalizeDailyReportLocale,
+} from "../../src/lib/dailyReportI18n";
 import { pickRotatedPraiseQuotes } from "../../src/lib/dailyReportOrderly";
 import { parseDailyReportOutput } from "../../src/lib/ai/guardrails";
+import { buildDailyReportMessages } from "../../src/lib/ai/tasks/dailyReportPrompt";
 
 function emptyExtras(): Pick<
   DailyReportPayload,
@@ -60,6 +68,67 @@ function emptyExtras(): Pick<
   };
 }
 
+function basePayload(
+  overrides: Partial<DailyReportPayload> = {},
+): DailyReportPayload {
+  return {
+    tenantId: "t1",
+    tenantSlug: "samurai",
+    restaurantName: "Samurai Martinsville",
+    reportDate: "2026-07-16",
+    timeZone: "America/Indiana/Indianapolis",
+    locale: "en",
+    squareAvailable: true,
+    day: {
+      date: "2026-07-16",
+      totalSalesCents: 169201,
+      netSalesCents: 150000,
+      orderCount: 49,
+      avgNetSalesCents: 3061,
+      tipsCents: 12000,
+      taxCents: 8000,
+      uniqueCustomers: 40,
+    },
+    avg7d: {
+      totalSalesCents: 190000,
+      orderCount: 55,
+      uniqueCustomers: 45,
+      avgNetSalesCents: 3400,
+    },
+    trend7d: [],
+    topProducts: [
+      { name: "Hibachi Chicken", quantity: 12, netSalesCents: 166400 },
+    ],
+    busyHours: [{ hour: 18, totalSalesCents: 40000, orderCount: 9 }],
+    peakHour: 18,
+    orderlyChannels: [{ src: "google", orders: 2, totalCents: 6251 }],
+    reputation: {
+      buckets: {
+        praise: 1,
+        question: 2,
+        complaint: 0,
+        allergy_health: 0,
+        other: 0,
+      },
+      quotes: [],
+      urgent: [],
+      unanswered: [
+        {
+          classification: "question",
+          excerpt: "Hours?",
+          platform: "facebook",
+          status: "new",
+        },
+      ],
+      unansweredQuestions: 1,
+    },
+    ...emptyExtras(),
+    insights: ["Peak around 6 PM"],
+    disclaimer: "Totals = Square (all channels).",
+    ...overrides,
+  };
+}
+
 describe("daily report Phase 1 / narrative v2", () => {
   const prevTenants = process.env.DAILY_REPORT_TENANTS;
   const prevTo = process.env.DAILY_REPORT_TO;
@@ -84,6 +153,19 @@ describe("daily report Phase 1 / narrative v2", () => {
     expect(t[0].slug).toBe("samurai");
     expect(t[0].timeZone).toBe("America/Indiana/Indianapolis");
     expect(t[0].to).toEqual(["a@x.com", "b@x.com"]);
+  });
+
+  test("parseDailyReportTenants optional 4th field is locale", () => {
+    process.env.DAILY_REPORT_TENANTS =
+      "samurai=America/Indiana/Indianapolis=a@x.com=id";
+    const t = parseDailyReportTenants();
+    expect(t[0].locale).toBe("id");
+  });
+
+  test("normalizeDailyReportLocale maps id/es/en", () => {
+    expect(normalizeDailyReportLocale("id-ID")).toBe("id");
+    expect(normalizeDailyReportLocale("es")).toBe("es");
+    expect(normalizeDailyReportLocale("fr")).toBe("en");
   });
 
   test("parseDailySalesRows maps Square columns", () => {
@@ -187,21 +269,14 @@ describe("daily report Phase 1 / narrative v2", () => {
   });
 
   test("HTML never invents Square totals when unavailable; shows narrative + attribution disclaimer", () => {
-    const payload: DailyReportPayload = {
-      tenantId: "t1",
-      tenantSlug: "samurai",
-      restaurantName: "Samurai Martinsville",
-      reportDate: "2026-07-16",
-      timeZone: "America/Indiana/Indianapolis",
+    const payload = basePayload({
       squareAvailable: false,
       squareError: "Square reporting 403",
       day: null,
       avg7d: null,
-      trend7d: [],
       topProducts: [],
       busyHours: [],
       peakHour: null,
-      orderlyChannels: [{ src: "google", orders: 2, totalCents: 6251 }],
       reputation: {
         buckets: {
           praise: 1,
@@ -215,11 +290,10 @@ describe("daily report Phase 1 / narrative v2", () => {
         unanswered: [],
         unansweredQuestions: 0,
       },
-      ...emptyExtras(),
       insights: ["Fact-only insight"],
       disclaimer:
         "Totals = Square (all channels). Online channel $ = Orderly attribution only — never added to Square. Narrative & insights use actual data only; no forecasts. Supply reminder = usage from sales (Level 1), not inventory prediction.",
-    };
+    });
     const html = renderDailyReportHtml(payload);
     expect(html).toContain("Square data unavailable");
     expect(html).toContain("do not add these dollars");
@@ -234,35 +308,9 @@ describe("daily report Phase 1 / narrative v2", () => {
   });
 
   test("HTML shows supply reminder and unanswered highlight", () => {
-    const payload: DailyReportPayload = {
-      tenantId: "t1",
+    const payload = basePayload({
       tenantSlug: "demo",
       restaurantName: "Demo Resto",
-      reportDate: "2026-07-16",
-      timeZone: "America/Indiana/Indianapolis",
-      squareAvailable: true,
-      day: {
-        date: "2026-07-16",
-        totalSalesCents: 169201,
-        netSalesCents: 150000,
-        orderCount: 49,
-        avgNetSalesCents: 3061,
-        tipsCents: 12000,
-        taxCents: 8000,
-        uniqueCustomers: 40,
-      },
-      avg7d: {
-        totalSalesCents: 190000,
-        orderCount: 55,
-        uniqueCustomers: 45,
-        avgNetSalesCents: 3400,
-      },
-      trend7d: [],
-      topProducts: [
-        { name: "Hibachi Chicken", quantity: 12, netSalesCents: 166400 },
-      ],
-      busyHours: [{ hour: 18, totalSalesCents: 40000, orderCount: 9 }],
-      peakHour: 18,
       orderlyChannels: [],
       reputation: {
         buckets: {
@@ -302,7 +350,6 @@ describe("daily report Phase 1 / narrative v2", () => {
         ],
         unansweredQuestions: 3,
       },
-      ...emptyExtras(),
       socialPosts: {
         drafted: 0,
         pendingApproval: 0,
@@ -336,9 +383,7 @@ describe("daily report Phase 1 / narrative v2", () => {
         ideaForToday: "Promote Hibachi Chicken before 6 PM.",
         source: "ai",
       },
-      insights: ["Peak around 6 PM"],
-      disclaimer: "Totals = Square (all channels).",
-    };
+    });
     const html = renderDailyReportHtml(payload);
     expect(html).toContain("NEEDS ATTENTION");
     expect(html).toContain("6 questions yesterday · 4 still unanswered");
@@ -349,6 +394,157 @@ describe("daily report Phase 1 / narrative v2", () => {
     expect(html).toContain("~237 drink cups");
     expect(html).toContain("Narrative by AI Gateway");
     expect(html).toContain("Tips $120.00");
+  });
+
+  test("HTML + attention + supply render in Bahasa Indonesia", () => {
+    const attention = buildAttentionLine(
+      {
+        buckets: {
+          praise: 0,
+          question: 6,
+          complaint: 0,
+          allergy_health: 0,
+          other: 0,
+        },
+        quotes: [],
+        urgent: [],
+        unanswered: [
+          {
+            classification: "question",
+            excerpt: "a",
+            platform: "fb",
+            status: "new",
+          },
+          {
+            classification: "question",
+            excerpt: "b",
+            platform: "fb",
+            status: "new",
+          },
+          {
+            classification: "question",
+            excerpt: "c",
+            platform: "fb",
+            status: "new",
+          },
+          {
+            classification: "praise",
+            excerpt: "d",
+            platform: "fb",
+            status: "new",
+          },
+        ],
+        unansweredQuestions: 3,
+      },
+      "id",
+    );
+    expect(attention).toContain("pertanyaan kemarin");
+    expect(attention).toContain("belum dijawab");
+
+    const supply = formatSupplyReminderLocalized(
+      [
+        {
+          supplyType: "gelas_minuman",
+          label: "drink cups",
+          quantity: 237,
+        },
+        {
+          supplyType: "box_bento",
+          label: "bento boxes",
+          quantity: 121,
+        },
+      ],
+      "id",
+    );
+    expect(supply).toContain("Dipakai minggu ini");
+    expect(supply).toContain("gelas minuman");
+
+    const payload = basePayload({
+      locale: "id",
+      narrative: {
+        greeting: "Selamat pagi — ini Demo untuk 2026-07-16.",
+        body: "Kemarin kamu mencatat $1,692.01 dari 49 pesanan.",
+        attention,
+        ideaForToday: "Promosikan Hibachi Chicken sebelum jam puncak.",
+        source: "facts",
+      },
+      supplyReminder: supply,
+      insights: ["Jam tersibuk sekitar 6 PM"],
+    });
+    const html = renderDailyReportHtml(payload);
+    expect(html).toContain('lang="id"');
+    expect(html).toContain("ORDERLY HARIAN");
+    expect(html).toContain("Penjualan kemarin (semua channel)");
+    expect(html).toContain("CATATAN MANAJER");
+    expect(html).toContain("SATU IDE UNTUK HARI INI");
+    expect(html).toContain("PENGINGAT SUPPLY");
+    expect(html).toContain("Selamat pagi");
+    expect(renderDailyReportSubject(payload)).toContain("· ID");
+  });
+
+  test("HTML + attention render in Spanish", () => {
+    const attention = buildAttentionLine(
+      {
+        buckets: {
+          praise: 0,
+          question: 3,
+          complaint: 0,
+          allergy_health: 0,
+          other: 0,
+        },
+        quotes: [],
+        urgent: [],
+        unanswered: [
+          {
+            classification: "question",
+            excerpt: "a",
+            platform: "fb",
+            status: "new",
+          },
+        ],
+        unansweredQuestions: 1,
+      },
+      "es",
+    );
+    expect(attention).toContain("preguntas ayer");
+    expect(attention).toContain("sin respuesta");
+
+    const payload = basePayload({
+      locale: "es",
+      narrative: {
+        greeting: "Buenos días — aquí va Demo para 2026-07-16.",
+        body: "Ayer registraste $1,692.01 en 49 pedidos.",
+        attention,
+        ideaForToday: "Promueve Hibachi Chicken antes de la hora pico.",
+        source: "facts",
+      },
+      supplyReminder: formatSupplyReminderLocalized(
+        [
+          {
+            supplyType: "gelas_minuman",
+            label: "drink cups",
+            quantity: 237,
+          },
+        ],
+        "es",
+      ),
+      insights: ["Hora más ocupada alrededor de las 6 PM"],
+    });
+    const html = renderDailyReportHtml(payload);
+    expect(html).toContain('lang="es"');
+    expect(html).toContain("ORDERLY DIARIO");
+    expect(html).toContain("Ventas de ayer (todos los canales)");
+    expect(html).toContain("NOTA DEL GERENTE");
+    expect(html).toContain("UNA IDEA PARA HOY");
+    expect(html).toContain("Buenos días");
+    expect(renderDailyReportSubject(payload)).toContain("· ES");
+  });
+
+  test("AI prompt instructs Bahasa Indonesia / Spanish", () => {
+    const idMsgs = buildDailyReportMessages({ language: "id", sales: 1 });
+    expect(idMsgs.user).toContain("Bahasa Indonesia");
+    const esMsgs = buildDailyReportMessages({ language: "es", sales: 1 });
+    expect(esMsgs.user).toContain("Spanish");
   });
 
   test("buildAttentionLine aligns questions with unanswered", () => {
@@ -387,6 +583,7 @@ describe("daily report Phase 1 / narrative v2", () => {
       restaurantName: "Demo",
       reportDate: "2026-07-16",
       timeZone: "America/Indiana/Indianapolis",
+      locale: "en",
       socialPosts: {
         drafted: 0,
         pendingApproval: 0,
@@ -407,6 +604,41 @@ describe("daily report Phase 1 / narrative v2", () => {
     expect(insights[0]).toContain("Shrimp Bento");
     expect(insights[0]).toContain("30 clicks → 0 orders");
     expect(insights[0]).toContain("Hibachi Chicken");
+  });
+
+  test("click anomaly insight localizes to Indonesian", () => {
+    const insights = buildFactInsights({
+      topProducts: [
+        { name: "Hibachi Chicken", quantity: 146, netSalesCents: 167556 },
+      ],
+      peakHour: null,
+      day: null,
+      avg7d: null,
+      orderlyChannels: [],
+      supplyReminder: "",
+      restaurantName: "Demo",
+      reportDate: "2026-07-16",
+      timeZone: "America/Indiana/Indianapolis",
+      locale: "id",
+      socialPosts: {
+        drafted: 0,
+        pendingApproval: 0,
+        posted: 1,
+        highlights: [],
+        clickAnomalies: [
+          {
+            itemName: "Shrimp Bento",
+            platform: "facebook",
+            srcTag: "fb-shrimpbento",
+            clicks: 30,
+            orders: 0,
+            revenueCents: 0,
+          },
+        ],
+      },
+    });
+    expect(insights[0]).toContain("30 klik → 0 pesanan");
+    expect(insights[0]).toContain("minat tanpa checkout");
   });
 
   test("praise quote rotation dedupes and reduces count", () => {

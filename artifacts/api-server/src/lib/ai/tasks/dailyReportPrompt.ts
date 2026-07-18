@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  languageInstruction,
+  normalizeDailyReportLocale,
+} from "../../dailyReportI18n";
 
 let cachedPrompt: string | null = null;
 
@@ -35,8 +39,12 @@ export function buildDailyReportMessages(facts: Record<string, unknown>): {
   user: string;
 } {
   const system = loadPromptFile();
+  const locale = normalizeDailyReportLocale(
+    typeof facts.language === "string" ? facts.language : "en",
+  );
   const user = [
     "Write today's owner report from these FACTS only.",
+    languageInstruction(locale),
     "",
     JSON.stringify(facts, null, 2),
     "",

@@ -22,9 +22,11 @@ DAILY_REPORT_TENANT_SLUG=samurai
 DAILY_REPORT_TZ=America/Indiana/Indianapolis
 DAILY_REPORT_TO=malik@example.com
 DAILY_REPORT_FROM="Orderly Reports <reports@yourdomain>"
+# Owner email language (en | id | es). Optional — also accept body/query `locale`.
+DAILY_REPORT_LOCALE=en
 RESEND_API_KEY=re_...
-# multi-tenant optional:
-# DAILY_REPORT_TENANTS=samurai=America/Indiana/Indianapolis=a@x.com;kirin=America/Chicago=b@y.com
+# multi-tenant optional (4th field = locale):
+# DAILY_REPORT_TENANTS=samurai=America/Indiana/Indianapolis=a@x.com=id;kirin=America/Chicago=b@y.com=es
 ```
 
 ## Trial hari ini (manual)
@@ -33,6 +35,12 @@ RESEND_API_KEY=re_...
 # Preview HTML
 curl -sS "https://samurairesto.com/api/internal/daily-report/preview?tenantSlug=samurai" \
   -H "X-Daily-Report-Secret: $DAILY_REPORT_CRON_SECRET" -o /tmp/daily.html
+
+# Preview Bahasa Indonesia / Español
+curl -sS "https://samurairesto.com/api/internal/daily-report/preview?tenantSlug=samurai&locale=id" \
+  -H "X-Daily-Report-Secret: $DAILY_REPORT_CRON_SECRET" -o /tmp/daily-id.html
+curl -sS "https://samurairesto.com/api/internal/daily-report/preview?tenantSlug=samurai&locale=es" \
+  -H "X-Daily-Report-Secret: $DAILY_REPORT_CRON_SECRET" -o /tmp/daily-es.html
 
 # Dry-run (assemble only)
 curl -sS -X POST "https://samurairesto.com/api/internal/daily-report/run" \
@@ -45,6 +53,16 @@ curl -sS -X POST "https://samurairesto.com/api/internal/daily-report/run" \
   -H "Content-Type: application/json" \
   -H "X-Daily-Report-Secret: $DAILY_REPORT_CRON_SECRET" \
   -d '{"tenantSlug":"samurai"}'
+
+# Send trial — Bahasa Indonesia, then Español
+curl -sS -X POST "https://samurairesto.com/api/internal/daily-report/run" \
+  -H "Content-Type: application/json" \
+  -H "X-Daily-Report-Secret: $DAILY_REPORT_CRON_SECRET" \
+  -d '{"tenantSlug":"samurai","locale":"id"}'
+curl -sS -X POST "https://samurairesto.com/api/internal/daily-report/run" \
+  -H "Content-Type: application/json" \
+  -H "X-Daily-Report-Secret: $DAILY_REPORT_CRON_SECRET" \
+  -d '{"tenantSlug":"samurai","locale":"es"}'
 ```
 
 ## Square REPORTING_READ

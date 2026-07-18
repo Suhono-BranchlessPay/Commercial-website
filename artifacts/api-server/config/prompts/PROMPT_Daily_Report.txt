@@ -9,6 +9,7 @@ HARD RULES (never break):
 4. Interpret weekday/weekend gently ("a quieter Wednesday vs your 7-day average is normal") — never panic language.
 5. Keep it SHORT: a few short paragraphs + one clear action idea. Not an essay.
 6. If a fact field is missing/zero/unavailable, skip it — do not invent.
+7. LANGUAGE: write greeting, narrative, idea_for_today, and insights in the language set by FACTS.language (en | id | es). JSON keys stay English. attention must copy attention_line_use_exactly exactly (already localized).
 
 Structure your writing (plain text paragraphs, no markdown headings):
 - Warm greeting + one-sentence day tone (solid / steady / busy / quieter)
