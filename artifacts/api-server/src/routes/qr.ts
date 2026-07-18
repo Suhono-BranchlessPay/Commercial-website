@@ -16,6 +16,12 @@ import {
 import { logger } from "../lib/logger";
 import { resolveTenant } from "../lib/tenant";
 import { slugifySeo } from "../lib/seoTags";
+import {
+  escapeHrefForUa,
+  isLikelyIosUa,
+  renderWebviewEscapeHtml,
+  shouldEscapeInAppBrowser,
+} from "../lib/webviewEscape";
 
 const router = Router();
 
@@ -186,6 +192,30 @@ router.get(
       }
 
       res.setHeader("Cache-Control", "no-store");
+
+      // Facebook/IG WebView: one clean Continue screen (not 302 into a warning maze).
+      const ua = String(req.headers["user-agent"] || "");
+      if (shouldEscapeInAppBrowser(ua) && req.query.stay !== "1") {
+        const brand =
+          typeof (tenant.theme as Record<string, unknown> | null)?.brandName ===
+          "string"
+            ? String((tenant.theme as Record<string, unknown>).brandName)
+            : tenant.name || "Order online";
+        const escapeHref = escapeHrefForUa(redirectUrl, ua);
+        res
+          .status(200)
+          .type("html")
+          .send(
+            renderWebviewEscapeHtml({
+              brandName: brand,
+              httpsTarget: redirectUrl,
+              escapeHref,
+              ios: isLikelyIosUa(ua),
+            }),
+          );
+        return;
+      }
+
       res.redirect(302, redirectUrl);
     } catch (err) {
       logger.error({ err, itemSlug }, "Short link /s/ redirect failed");

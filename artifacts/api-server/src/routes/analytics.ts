@@ -5,6 +5,7 @@ import { db } from "@workspace/db";
 import { analyticsEventsTable } from "@workspace/db";
 import { getTenantId } from "../lib/tenant";
 import { enqueueFromAnalytics } from "../lib/metaCapi";
+import { browserContextFromUa } from "../lib/inAppBrowserUa";
 
 const router = Router();
 
@@ -14,6 +15,16 @@ const EVENT_TYPES = [
   "add_to_cart",
   "checkout_start",
   "paid",
+  /** WebView / Square payment funnel instrumentation (not Meta CAPI). */
+  "webview_detected",
+  "square_card_init",
+  "square_card_ready",
+  "square_card_timeout",
+  "square_card_error",
+  "checkout_pay_attempt",
+  "square_tokenize_ok",
+  "square_tokenize_fail",
+  "checkout_pay_fail",
 ] as const;
 
 const trackSchema = z.object({
@@ -41,6 +52,11 @@ router.post("/analytics/events", async (req, res): Promise<void> => {
   const tenantId = req.tenant?.id ?? getTenantId();
   const { session_id, event_type, item_id, order_id, event_id, meta } =
     parsed.data;
+  const ua =
+    typeof req.headers["user-agent"] === "string"
+      ? req.headers["user-agent"]
+      : null;
+  const browser = browserContextFromUa(ua);
 
   try {
     await db.insert(analyticsEventsTable).values({
@@ -53,6 +69,7 @@ router.post("/analytics/events", async (req, res): Promise<void> => {
       meta: {
         ...(meta ?? {}),
         ...(event_id ? { event_id } : {}),
+        ...browser,
       },
     });
     res.status(202).json({ ok: true });

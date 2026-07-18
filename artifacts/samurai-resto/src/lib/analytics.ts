@@ -4,6 +4,8 @@
  * Each call generates a stable event_id for future Meta Pixel↔CAPI dedup.
  */
 
+import { browserPaymentContext } from "@/lib/inAppBrowser";
+
 const API_BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 
 function sessionKey(tenantId: string) {
@@ -65,7 +67,16 @@ export type AnalyticsEventType =
   | "menu_view"
   | "add_to_cart"
   | "checkout_start"
-  | "paid";
+  | "paid"
+  | "webview_detected"
+  | "square_card_init"
+  | "square_card_ready"
+  | "square_card_timeout"
+  | "square_card_error"
+  | "checkout_pay_attempt"
+  | "square_tokenize_ok"
+  | "square_tokenize_fail"
+  | "checkout_pay_fail";
 
 export function trackAnalyticsEvent(input: {
   tenantId: string;
@@ -78,6 +89,7 @@ export function trackAnalyticsEvent(input: {
 }): void {
   const eventId = input.eventId || newEventId();
   const click = metaClickIds();
+  const browser = browserPaymentContext();
   const body = {
     session_id: getAnalyticsSessionId(input.tenantId),
     event_type: input.eventType,
@@ -89,6 +101,7 @@ export function trackAnalyticsEvent(input: {
       event_id: eventId,
       source_url:
         typeof window !== "undefined" ? window.location.href : undefined,
+      ...browser,
       ...(click.fbp ? { fbp: click.fbp } : {}),
       ...(click.fbc ? { fbc: click.fbc } : {}),
     },
