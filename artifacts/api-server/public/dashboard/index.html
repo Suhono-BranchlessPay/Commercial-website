@@ -367,8 +367,8 @@
         </div>
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Date</th><th>Time</th><th>Pillar</th><th>Hook</th><th>Item</th><th>Status</th><th>src</th><th class="num">Clicks</th><th class="num">Orders</th></tr></thead>
-            <tbody id="contentCalRows"><tr><td colspan="9" class="empty">No calendar rows yet.</td></tr></tbody>
+            <thead><tr><th>Date</th><th>Time</th><th>Pillar</th><th>Hook</th><th>Item</th><th>Photo</th><th>Status</th><th>src</th><th class="num">Clicks</th><th class="num">Orders</th></tr></thead>
+            <tbody id="contentCalRows"><tr><td colspan="10" class="empty">No calendar rows yet.</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1630,13 +1630,21 @@ async function loadContentCalendar() {
           const id = p.id;
           const date = p.scheduledDate || p.scheduled_date || '';
           const time = String(p.suggestedTime || p.suggested_time || '').slice(0, 5);
+          const brief = p.designBrief || p.design_brief || {};
+          const needsPhoto = brief.photo_needed === true || brief.photo_needed === 'true' || (!p.photoAssetId && !p.photo_asset_id && brief.has_menu_photo === false);
+          const claimRecheck = brief.claim_recheck === true || brief.claim_recheck === 'true';
+          const photoLabel = needsPhoto
+            ? '<span style="color:#b45309;font-weight:600">Needs photo</span>'
+            : '<span style="color:#15803d;font-weight:600">Ready</span>';
+          const claimBadge = claimRecheck ? ' <span style="color:#b45309;font-size:11px">· recheck claim</span>' : '';
           return '<tr data-id="' + esc(id) + '" style="cursor:pointer">' +
             '<td>' + esc(date) + '</td><td>' + esc(time) + '</td><td>' + esc(p.pillar || '') + '</td>' +
-            '<td>' + esc(p.hook || '') + '</td><td>' + esc(p.targetItemName || p.target_item_name || '—') + '</td>' +
+            '<td>' + esc(p.hook || '') + claimBadge + '</td><td>' + esc(p.targetItemName || p.target_item_name || '—') + '</td>' +
+            '<td>' + photoLabel + '</td>' +
             '<td>' + esc(p.status) + '</td><td class="mono">' + esc(p.srcSlug || p.src_slug || '') + '</td>' +
             '<td class="num">' + (p.clicks || 0) + '</td><td class="num">' + (p.orders || 0) + '</td></tr>';
         }).join('')
-      : '<tr><td colspan="9" class="empty">No rows — Generate month.</td></tr>';
+      : '<tr><td colspan="10" class="empty">No rows — Generate month.</td></tr>';
     $('contentCalRows').querySelectorAll('tr[data-id]').forEach((tr) => {
       tr.addEventListener('click', () => {
         const id = tr.getAttribute('data-id');
@@ -1647,8 +1655,14 @@ async function loadContentCalendar() {
         contentCalFullText = [p.hook, p.caption, tags, p.shortLink || p.short_link].filter(Boolean).join('\n\n');
         const box = $('contentCalPreview');
         const actions = $('contentCalActions');
+        const brief = p.designBrief || p.design_brief || {};
+        const needsPhoto = brief.photo_needed === true || brief.photo_needed === 'true' || (!p.photoAssetId && !p.photo_asset_id && brief.has_menu_photo === false);
+        const claimRecheck = brief.claim_recheck === true || brief.claim_recheck === 'true';
+        let banner = '';
+        if (needsPhoto) banner += '⚠ PHOTO NEEDED — do not approve until a menu photo exists for this item.\n\n';
+        if (claimRecheck) banner += '⚠ CLAIM RECHECK — ranking claim (e.g. most-ordered) must be re-verified against live sales before Mark posted.\n\n';
         box.style.display = 'block';
-        box.textContent = contentCalFullText;
+        box.textContent = banner + contentCalFullText;
         actions.style.display = 'flex';
       });
     });
@@ -1779,6 +1793,12 @@ $('contentCalGenBtn').addEventListener('click', async () => {
 $('contentCalApproveBtn').addEventListener('click', async () => {
   const tenant = $('tenant').value;
   if (!tenant || !contentCalActiveId) return;
+  const active = contentCalRowsCache.find((x) => x.id === contentCalActiveId);
+  const brief = active && (active.designBrief || active.design_brief || {});
+  const needsPhoto = brief && (brief.photo_needed === true || brief.photo_needed === 'true');
+  if (needsPhoto && !confirm('This post is marked Needs photo (no menu image). Approve anyway? You will be stuck in Canva without a product shot.')) {
+    return;
+  }
   try {
     const data = await api('/content-calendar/' + contentCalActiveId + '/approve', {
       method: 'POST',
