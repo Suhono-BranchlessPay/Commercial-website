@@ -70,14 +70,14 @@ curl -sS -X POST "https://samurairesto.com/api/internal/daily-report/run" \
 - [x] Preview HTML/JSON generated for **2026-07-16** (lihat `docs/daily-reports/TRIAL_Samurai_2026-07-16.md`)
 - [x] Anti double-count di HTML (Orderly subset terpisah)
 - [x] `DAILY_REPORT_CRON_SECRET` di ecosystem VPS (file `/tmp/daily-report-secret.txt`)
-- [ ] **Email:** set `RESEND_API_KEY` + `DAILY_REPORT_TO` + `DAILY_REPORT_FROM`, lalu POST `/api/internal/daily-report/run`
-- [ ] `DAILY_REPORT_ENABLED=1` untuk cron 4am (setelah email proven)
+- [x] **Email:** Resend set; trial send 18 Jul 2026 → `samurairesromartins@gmail.com` (`emailId=50d49aca-…`, reportDate 2026-07-17)
+- [x] `DAILY_REPORT_ENABLED=1` untuk cron 4am (enabled 18 Jul setelah email proven)
 
 ## Definisi selesai Fase 1 (checklist)
 
 - [x] REPORTING_READ / token bisa query A,B,C (data nyata)
 - [x] Preview HTML menampilkan penjualan + produk + tren
-- [ ] Email terkirim ke Malik (trial) — tunggu Resend + alamat
+- [x] Email terkirim ke Malik (trial) — 18 Jul 2026
 - [x] Anti double-count terlihat di copy
 - [x] Per-tenant env (bukan hardcode email di kode)
 - [x] CI + Bugbot hijau (#68)
