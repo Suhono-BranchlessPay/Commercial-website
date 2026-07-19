@@ -34,6 +34,7 @@ import {
 import { buildTrackedUrl, slugifyShortPath } from "./socialPostDraft";
 import { QR_SCAN_BOT_UA_PATTERN } from "./qrScanBotFilter";
 import { filterPastPerformanceForContentEngine } from "./dailyReportDataQuality";
+import { sqlExcludeOpsTestOrders } from "./orderTestExclusion";
 import { logger } from "./logger";
 
 export {
@@ -481,6 +482,7 @@ export async function refreshContentCalendarMetrics(
           eq(ordersTable.tenantId, tenantId),
           eq(ordersTable.paymentStatus, "paid"),
           sql`lower(coalesce(${ordersTable.sourceDetail}->>'src','')) = ${srcTag}`,
+          sqlExcludeOpsTestOrders(),
         ),
       );
     const orders = Number(orderRows[0]?.c ?? 0);

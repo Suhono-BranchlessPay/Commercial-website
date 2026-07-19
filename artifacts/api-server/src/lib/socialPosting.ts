@@ -29,6 +29,7 @@ import {
 } from "./socialPostDraft";
 import { buildItemSales, type ReportRange } from "./dashboardReports";
 import { QR_SCAN_BOT_UA_PATTERN } from "./qrScanBotFilter";
+import { sqlExcludeOpsTestOrders } from "./orderTestExclusion";
 
 export function isSocialPostingEngineEnabled(): boolean {
   const v = process.env.ORDERLY_SOCIAL_POSTING_ENABLED?.trim().toLowerCase();
@@ -649,6 +650,7 @@ export async function refreshSocialPostMetrics(
     const botClicks = Number(clickRows[0]?.bot ?? 0);
 
     // Closed-loop: ANY paid order with this src (not only the promoted item).
+    // Ops/QA is_test orders are excluded so Content Engine is not trained on them.
     const orderRows = await db
       .select({
         c: sql<number>`count(*)::int`,
@@ -660,6 +662,7 @@ export async function refreshSocialPostMetrics(
           eq(ordersTable.tenantId, tenantId),
           eq(ordersTable.paymentStatus, "paid"),
           sql`lower(coalesce(${ordersTable.sourceDetail}->>'src','')) = ${srcTag}`,
+          sqlExcludeOpsTestOrders(),
         ),
       );
     const orders = Number(orderRows[0]?.c ?? 0);
@@ -681,6 +684,7 @@ export async function refreshSocialPostMetrics(
             eq(ordersTable.tenantId, tenantId),
             eq(ordersTable.paymentStatus, "paid"),
             sql`lower(coalesce(${ordersTable.sourceDetail}->>'src','')) = ${srcTag}`,
+            sqlExcludeOpsTestOrders(),
             sql`lower(${orderLinesTable.menuItemName}) like ${`%${itemNeedle}%`}`,
           ),
         );
