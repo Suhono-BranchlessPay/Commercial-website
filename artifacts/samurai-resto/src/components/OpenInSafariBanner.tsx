@@ -4,9 +4,30 @@ import { isMetaInAppBrowser } from "@/lib/inAppBrowser";
 import { useCart } from "@/lib/cart";
 import { shareCart, withCartToken } from "@/lib/cartShare";
 import { openSecureBrowser, toEscapeHref } from "@/lib/safariHandoff";
+import { getAttribution } from "@/lib/attribution";
 import { useTenant } from "@/lib/tenant";
 import { trackAnalyticsEvent } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
+
+/** Keep campaign src/item on handoff URL even if the current path dropped them. */
+function withAttributionParams(url: string, tenantId: string): string {
+  try {
+    const u = new URL(url, window.location.origin);
+    const attr = getAttribution(tenantId);
+    const detail = attr.source_detail || {};
+    const src =
+      (typeof detail.src === "string" && detail.src) ||
+      u.searchParams.get("src");
+    if (src && !u.searchParams.get("src")) u.searchParams.set("src", src);
+    const item =
+      (typeof detail.item === "string" && detail.item) ||
+      u.searchParams.get("item");
+    if (item && !u.searchParams.get("item")) u.searchParams.set("item", item);
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
 
 type Props = {
   /** Kept for callers; UI is always a single primary CTA (no lecture). */
@@ -47,7 +68,10 @@ export function OpenInSafariBanner({ surface = "layout" }: Props) {
       setSharing(true);
       const token = items.length > 0 ? await shareCart(items) : null;
       if (cancelled) return;
-      const base = window.location.href;
+      const tenantId = tenant?.tenantId;
+      const base = tenantId
+        ? withAttributionParams(window.location.href, tenantId)
+        : window.location.href;
       setHandoffUrl(token ? withCartToken(base, token) : base);
       setSharing(false);
     })();

@@ -35,19 +35,57 @@ export function escapeHrefForUa(
 /**
  * One-screen handoff — not a warning lecture.
  * Auto-attempts Safari on iOS Meta WebViews; one primary tap as fallback.
+ *
+ * Continue targets /menu?src=… (never /s/ again) so qr_scans is not double-counted.
  */
 export function renderWebviewEscapeHtml(input: {
   brandName: string;
   httpsTarget: string;
   escapeHref: string;
   ios: boolean;
+  src?: string | null;
+  itemId?: string | null;
 }): string {
   const brand = escapeHtml(input.brandName || "Order online");
   const httpsTarget = escapeHtmlAttr(input.httpsTarget);
   const escapeHref = escapeHtmlAttr(input.escapeHref);
-  const autoScript = input.ios
-    ? `<script>(function(){try{setTimeout(function(){location.href=${JSON.stringify(input.escapeHref)};},80);}catch(e){}})();</script>`
-    : "";
+  const trackMeta = JSON.stringify({
+    surface: "s_continue",
+    src: input.src ?? null,
+    item: input.itemId ?? null,
+    https_target: input.httpsTarget,
+  });
+  const script = `<script>(function(){
+  var meta=${trackMeta};
+  var sid='wv_'+Date.now()+'_'+Math.random().toString(36).slice(2,10);
+  function track(type, extra){
+    try{
+      var body=JSON.stringify({
+        session_id:sid,
+        event_type:type,
+        item_id: meta.item,
+        meta: Object.assign({}, meta, extra||{})
+      });
+      if(navigator.sendBeacon){
+        navigator.sendBeacon('/api/analytics/events', new Blob([body],{type:'application/json'}));
+      } else {
+        fetch('/api/analytics/events',{method:'POST',headers:{'Content-Type':'application/json'},body:body,keepalive:true}).catch(function(){});
+      }
+    }catch(e){}
+  }
+  track('webview_continue_shown');
+  document.addEventListener('DOMContentLoaded',function(){
+    var btn=document.getElementById('wv-continue');
+    if(btn) btn.addEventListener('click',function(){ track('webview_continue_tap'); });
+    var stay=document.getElementById('wv-stay');
+    if(stay) stay.addEventListener('click',function(){ track('webview_continue_stay'); });
+  });
+  ${
+    input.ios
+      ? `setTimeout(function(){ try{ track('webview_continue_auto'); location.href=${JSON.stringify(input.escapeHref)}; }catch(e){} }, 80);`
+      : ""
+  }
+})();</script>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -78,14 +116,14 @@ export function renderWebviewEscapeHtml(input: {
     text-decoration: underline; text-underline-offset: 3px;
   }
 </style>
-${autoScript}
+${script}
 </head>
 <body>
   <div class="card">
     <h1>${brand}</h1>
     <p>Tap once to continue to secure checkout.</p>
-    <a class="btn" href="${escapeHref}" rel="noopener">Continue</a>
-    <a class="quiet" href="${httpsTarget}">Stay in this browser</a>
+    <a class="btn" id="wv-continue" href="${escapeHref}" rel="noopener">Continue</a>
+    <a class="quiet" id="wv-stay" href="${httpsTarget}">Stay in this browser</a>
   </div>
 </body>
 </html>`;

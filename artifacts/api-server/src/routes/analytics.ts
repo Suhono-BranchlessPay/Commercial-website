@@ -17,6 +17,10 @@ const EVENT_TYPES = [
   "paid",
   /** WebView / Square payment funnel instrumentation (not Meta CAPI). */
   "webview_detected",
+  "webview_continue_shown",
+  "webview_continue_tap",
+  "webview_continue_auto",
+  "webview_continue_stay",
   "square_card_init",
   "square_card_ready",
   "square_card_timeout",
