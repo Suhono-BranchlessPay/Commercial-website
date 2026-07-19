@@ -464,11 +464,6 @@ export default function Order() {
               Tracking link will be sent when your Dasher is assigned.
             </p>
           )}
-          {values.orderType === "pickup" && (
-            <p className="text-xs text-muted-foreground mb-6">
-              We&apos;ll call you at {values.customerPhone} when your order is ready.
-            </p>
-          )}
           <Button asChild className="w-full h-12 text-base bg-primary hover:bg-primary/90 text-white">
             <Link href="/">← Back to Home</Link>
           </Button>
