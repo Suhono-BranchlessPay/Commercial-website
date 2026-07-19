@@ -72,6 +72,7 @@ router.get(["/bio", "/links"], async (req: Request, res: Response): Promise<void
         and(
           eq(menuItemsTable.tenantId, tenant.id),
           eq(menuItemsTable.available, true),
+          eq(menuItemsTable.excludeFromContent, false),
         ),
       )
       .orderBy(desc(menuItemsTable.featured), desc(menuItemsTable.available))
@@ -91,6 +92,7 @@ router.get(["/bio", "/links"], async (req: Request, res: Response): Promise<void
       const selfUrl = `https://${host}/bio?src=${encodeURIComponent(src)}&stay=1`;
       res
         .status(200)
+        .setHeader("X-Robots-Tag", "noindex, nofollow, noarchive")
         .type("html")
         .send(
           renderWebviewEscapeHtml({
@@ -156,6 +158,7 @@ router.get(["/bio", "/links"], async (req: Request, res: Response): Promise<void
 </html>`;
 
     res.setHeader("Cache-Control", "public, max-age=120");
+    res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
     res.status(200).type("html").send(html);
   } catch (err) {
     logger.error({ err }, "bio page failed");

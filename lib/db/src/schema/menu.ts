@@ -39,6 +39,11 @@ export const menuItemsTable = pgTable("menu_items", {
   imageUrl: text("image_url"),
   available: boolean("available").notNull().default(true),
   featured: boolean("featured").notNull().default(false),
+  /**
+   * When true, Content Engine / calendar must not feature this item
+   * (third-party branded products, etc.). Default false = eligible.
+   */
+  excludeFromContent: boolean("exclude_from_content").notNull().default(false),
 
   // --- Block 5 multi-vertical seams (all nullable / non-breaking) ---
   /** Unit the price is quoted in, e.g. "each" | "lb" | "kg" | "oz". Null = existing restaurant per-item pricing. */

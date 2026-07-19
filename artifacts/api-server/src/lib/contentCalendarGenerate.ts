@@ -35,6 +35,11 @@ import {
   parseBusyHourRows,
   parseTopProductRows,
 } from "./squareReporting";
+import {
+  matchMenuItem,
+  matchMenuItemFromText,
+  textHasRankingClaim,
+} from "./contentCalendarMatch";
 
 function usHolidaysForMonth(year: number, month: number): string[] {
   // Lightweight fixed + observed — not a full calendar lib. Tenant events override.
@@ -224,39 +229,6 @@ function datesInMonth(year: number, month: number, n: number): string[] {
   return [...new Set(picked)].slice(0, n);
 }
 
-function matchMenuItem(
-  nameOrId: string | null | undefined,
-  catalog: Array<{ id: string; name: string }>,
-): { id: string; name: string } | null {
-  if (!nameOrId?.trim()) return null;
-  const raw = nameOrId.trim();
-  const byId = catalog.find((c) => c.id === raw);
-  if (byId) return byId;
-  const lower = raw.toLowerCase();
-  return (
-    catalog.find((c) => c.name.toLowerCase() === lower) ||
-    catalog.find((c) => c.name.toLowerCase().includes(lower)) ||
-    null
-  );
-}
-
-/** Prefer longest menu-name mention in hook/caption so links match the copy. */
-function matchMenuItemFromText(
-  text: string | null | undefined,
-  catalog: Array<{ id: string; name: string }>,
-): { id: string; name: string } | null {
-  const hay = String(text || "").toLowerCase();
-  if (!hay.trim() || !catalog.length) return null;
-  let best: { id: string; name: string } | null = null;
-  for (const item of catalog) {
-    const name = item.name.toLowerCase().trim();
-    if (name.length < 4) continue;
-    if (!hay.includes(name)) continue;
-    if (!best || name.length > best.name.length) best = item;
-  }
-  return best;
-}
-
 export async function generateContentCalendarMonth(input: {
   tenantId: string;
   /** YYYY-MM */
@@ -296,8 +268,16 @@ export async function generateContentCalendarMonth(input: {
   const photos = await listMenuItemsWithPhotos(input.tenantId);
   const unavailable = await listUnavailableMenuItems(input.tenantId);
   /** Full menu for caption→item matching (includes items without photos). */
-  const menuCatalog = available.map((p) => ({ id: p.id, name: p.name }));
-  const photoCatalog = photos.map((p) => ({ id: p.id, name: p.name }));
+  const menuCatalog = available.map((p) => ({
+    id: p.id,
+    name: p.name,
+    sku: p.sku,
+  }));
+  const photoCatalog = photos.map((p) => ({
+    id: p.id,
+    name: p.name,
+    sku: p.sku,
+  }));
 
   // Square — 30d top products (reuse reporting helper with last 30 days)
   const topRes = await fetchSquareTopProducts(tenant.slug, 10);
@@ -389,6 +369,11 @@ export async function generateContentCalendarMonth(input: {
     past_content_performance,
     attribution_dq_note,
     items_with_photos: photoCatalog,
+    menu_catalog: menuCatalog.map((p) => ({
+      id: p.id,
+      sku: p.sku,
+      name: p.name,
+    })),
     unavailable_items: unavailable.map((u) => u.name),
     local_events: localEvents,
     suggested_dates: scheduleDates,
@@ -487,20 +472,17 @@ export async function generateContentCalendarMonth(input: {
       "customer_voice",
     ].includes(pillar);
 
-    // Caption/hook win over AI target_item_* — models often pick a wrong
-    // cheap photo item (Bottle Water) while writing Hibachi/Rangoon copy.
-    // Match against FULL menu (not photo-only) so top sellers without photos
-    // still get the correct /s/ link; designBrief.photo_needed flags Canva.
+    // Prefer id/sku from the model, then longest name in copy, then name field.
+    // Fuzzy name-only matching swaps similar dishes (Hibachi Chicken vs … & Scallop).
+    const fromIdOrSku = matchMenuItem(p.target_item_id || null, menuCatalog);
     const fromText = matchMenuItemFromText(
       `${p.hook || ""}\n${p.caption || ""}`,
       menuCatalog,
     );
     let matched =
+      fromIdOrSku ||
       fromText ||
-      matchMenuItem(
-        p.target_item_id || p.target_item_name || null,
-        menuCatalog,
-      );
+      matchMenuItem(p.target_item_name || null, menuCatalog);
     // Last resort: top seller name, then any photo item — never catalog[i] drift.
     if (needsItem && !matched) {
       const topName = topRows[0]?.name;
@@ -587,9 +569,7 @@ export async function generateContentCalendarMonth(input: {
         // True only when the target item has no menu image — ignore model photo_needed.
         photo_needed: !links.photoAssetId,
         has_menu_photo: Boolean(links.photoAssetId),
-        claim_recheck: /\b(most[\s-]?ordered|#1|number\s*one|top[\s-]?seller|best[\s-]?seller)\b/i.test(
-          `${hook}\n${caption}`,
-        ),
+        claim_recheck: textHasRankingClaim(`${hook}\n${caption}`),
         pillar,
         hook,
         phase: 1,

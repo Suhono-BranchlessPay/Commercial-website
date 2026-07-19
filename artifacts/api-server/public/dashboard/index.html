@@ -1798,7 +1798,11 @@ $('contentCalApproveBtn').addEventListener('click', async () => {
   const active = contentCalRowsCache.find((x) => x.id === contentCalActiveId);
   const brief = active && (active.designBrief || active.design_brief || {});
   const needsPhoto = brief && (brief.photo_needed === true || brief.photo_needed === 'true');
+  const claimRecheck = brief && (brief.claim_recheck === true || brief.claim_recheck === 'true');
   if (needsPhoto && !confirm('This post is marked Needs photo (no menu image). Approve anyway? You will be stuck in Canva without a product shot.')) {
+    return;
+  }
+  if (claimRecheck && !confirm('This post has a ranking claim (e.g. most-ordered). Approve will re-check live Square top sellers and fail if the item dropped out. Continue?')) {
     return;
   }
   try {
