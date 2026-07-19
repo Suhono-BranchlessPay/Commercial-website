@@ -71,6 +71,7 @@ export function buildContentCalendarMessages(
         "Rows posted 2026-07-16 through 2026-07-18 are excluded (incomplete attribution).",
     ),
     items_with_photos: j(input.items_with_photos),
+    menu_catalog: j(input.menu_catalog ?? []),
     unavailable_items: j(input.unavailable_items),
     local_events: j(input.local_events),
     verified_quotes: j(input.verified_quotes),

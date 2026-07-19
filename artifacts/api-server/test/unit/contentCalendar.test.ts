@@ -8,11 +8,25 @@ import {
   wordCount,
 } from "../../src/lib/contentCalendar";
 import {
+  itemNameInTopProducts,
+  matchMenuItem,
+  matchMenuItemFromText,
+  textHasRankingClaim,
+} from "../../src/lib/contentCalendarMatch";
+import {
   filterPastPerformanceForContentEngine,
   isInAttributionIncompleteWindow,
   isPreWebviewFacebookPerformance,
 } from "../../src/lib/dailyReportDataQuality";
 import { parseContentCalendarOutput } from "../../src/lib/ai/guardrails";
+
+const CONFUSABLE_MENU = [
+  { id: "1", sku: "HC-SCALLOP", name: "Hibachi Chicken & Scallop" },
+  { id: "2", sku: "HS-CHICKEN", name: "Hibachi Steak & Chicken" },
+  { id: "3", sku: "HC", name: "Hibachi Chicken" },
+  { id: "4", sku: "CRAB-BENTO", name: "Crab Meat Bento" },
+  { id: "5", sku: "CHICKEN-BENTO", name: "Chicken Bento" },
+];
 
 describe("content calendar helpers", () => {
   test("src slug is platform-item-date", () => {
@@ -147,6 +161,42 @@ describe("content calendar helpers", () => {
       "fb-rainbowroll-20260719",
       "ig-summer-20260715",
     ]);
+  });
+
+  test("matchMenuItem prefers sku/id over confusable names", () => {
+    expect(matchMenuItem("HC-SCALLOP", CONFUSABLE_MENU)?.name).toBe(
+      "Hibachi Chicken & Scallop",
+    );
+    expect(matchMenuItem("3", CONFUSABLE_MENU)?.name).toBe("Hibachi Chicken");
+    expect(matchMenuItem("Hibachi Chicken", CONFUSABLE_MENU)?.name).toBe(
+      "Hibachi Chicken",
+    );
+    expect(matchMenuItem("Chicken Bento", CONFUSABLE_MENU)?.name).toBe(
+      "Chicken Bento",
+    );
+    expect(
+      matchMenuItemFromText(
+        "Tonight: Hibachi Chicken & Scallop — order ahead",
+        CONFUSABLE_MENU,
+      )?.sku,
+    ).toBe("HC-SCALLOP");
+  });
+
+  test("ranking claim helpers", () => {
+    expect(textHasRankingClaim("Our most-ordered hibachi")).toBe(true);
+    expect(textHasRankingClaim("Hibachi ready for pickup")).toBe(false);
+    expect(
+      itemNameInTopProducts("Hibachi Chicken", [
+        { name: "Shrimp Bento" },
+        { name: "Hibachi Chicken" },
+      ]),
+    ).toBe(true);
+    expect(
+      itemNameInTopProducts("Crab Meat Bento", [
+        { name: "Chicken Bento" },
+        { name: "Shrimp Bento" },
+      ]),
+    ).toBe(false);
   });
 
   test("parse content calendar JSON", () => {

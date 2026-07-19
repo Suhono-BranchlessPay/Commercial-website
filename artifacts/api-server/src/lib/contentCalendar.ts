@@ -36,6 +36,14 @@ import { QR_SCAN_BOT_UA_PATTERN } from "./qrScanBotFilter";
 import { filterPastPerformanceForContentEngine } from "./dailyReportDataQuality";
 import { sqlExcludeOpsTestOrders } from "./orderTestExclusion";
 import { logger } from "./logger";
+import {
+  itemNameInTopProducts,
+  textHasRankingClaim,
+} from "./contentCalendarMatch";
+import {
+  fetchSquareTopProducts,
+  parseTopProductRows,
+} from "./squareReporting";
 
 export {
   DEFAULT_PILLAR_MIX,
@@ -374,6 +382,59 @@ export async function updateContentCalendarPost(input: {
   return updated;
 }
 
+/**
+ * Ranking claims (most-ordered, top seller, etc.) are stamped at generate time.
+ * Re-check against live Square top products before approve / mark-posted.
+ * Clears claim_recheck on success; fail-closed if Square is down or item dropped out.
+ */
+export async function revalidateContentClaimAtPublish(
+  row: ContentCalendarRow,
+): Promise<Record<string, unknown> | null> {
+  const brief =
+    row.designBrief && typeof row.designBrief === "object"
+      ? ({ ...row.designBrief } as Record<string, unknown>)
+      : {};
+  const needs =
+    brief.claim_recheck === true ||
+    textHasRankingClaim(`${row.hook || ""}\n${row.caption || ""}`);
+  if (!needs) return null;
+
+  const itemName = String(row.targetItemName || "").trim();
+  if (!itemName) {
+    throw new Error(
+      "claim_recheck: ranking claim present but no target item — edit caption or set item",
+    );
+  }
+
+  const [tenant] = await db
+    .select({ slug: tenantsTable.slug })
+    .from(tenantsTable)
+    .where(eq(tenantsTable.id, row.tenantId))
+    .limit(1);
+  if (!tenant?.slug) throw new Error("tenant not found");
+
+  const topRes = await fetchSquareTopProducts(tenant.slug, 10);
+  if (!topRes.ok) {
+    throw new Error(
+      "claim_recheck: Square reporting unavailable — remove ranking claim or retry later",
+    );
+  }
+  const topRows = parseTopProductRows(topRes.data);
+  const byQty = [...topRows].sort((a, b) => b.quantity - a.quantity);
+  const ok =
+    itemNameInTopProducts(itemName, topRows, 5) ||
+    itemNameInTopProducts(itemName, byQty, 5);
+  if (!ok) {
+    throw new Error(
+      `claim_recheck failed: "${itemName}" is not in current top sellers — edit caption or clear ranking claim`,
+    );
+  }
+
+  brief.claim_recheck = false;
+  brief.claim_verified_at = new Date().toISOString();
+  return brief;
+}
+
 export async function approveContentCalendarPost(input: {
   tenantId: string;
   id: string;
@@ -387,6 +448,7 @@ export async function approveContentCalendarPost(input: {
   if (captionHasBannedClaim(row.caption) || captionHasBannedClaim(row.hook)) {
     throw new Error("banned claim in caption/hook — edit first");
   }
+  const verifiedBrief = await revalidateContentClaimAtPublish(row);
   const caption = ensureLinkInCaption(row.caption, row.shortLink);
   await db
     .update(contentCalendarTable)
@@ -396,6 +458,7 @@ export async function approveContentCalendarPost(input: {
       approvedAt: new Date(),
       caption,
       skippedReason: null,
+      ...(verifiedBrief ? { designBrief: verifiedBrief } : {}),
       updatedAt: new Date(),
     })
     .where(eq(contentCalendarTable.id, input.id));
@@ -451,11 +514,14 @@ export async function markContentCalendarPosted(input: {
   if (row.status !== "approved" && row.status !== "scheduled") {
     throw new Error("approve before marking posted");
   }
+  // Re-check again at publish time — sales mix can drift after approve.
+  const verifiedBrief = await revalidateContentClaimAtPublish(row);
   await db
     .update(contentCalendarTable)
     .set({
       status: "posted",
       postedAt: new Date(),
+      ...(verifiedBrief ? { designBrief: verifiedBrief } : {}),
       updatedAt: new Date(),
     })
     .where(eq(contentCalendarTable.id, input.id));
@@ -630,11 +696,18 @@ export async function fetchPastContentPerformance(
 }
 
 export async function listAvailableMenuItems(tenantId: string): Promise<
-  Array<{ id: string; name: string; imageUrl: string | null; available: boolean }>
+  Array<{
+    id: string;
+    sku: string;
+    name: string;
+    imageUrl: string | null;
+    available: boolean;
+  }>
 > {
   const items = await db
     .select({
       id: menuItemsTable.id,
+      sku: menuItemsTable.sku,
       name: menuItemsTable.name,
       imageUrl: menuItemsTable.imageUrl,
       available: menuItemsTable.available,
@@ -644,10 +717,12 @@ export async function listAvailableMenuItems(tenantId: string): Promise<
       and(
         eq(menuItemsTable.tenantId, tenantId),
         eq(menuItemsTable.available, true),
+        eq(menuItemsTable.excludeFromContent, false),
       ),
     );
   return items.map((i) => ({
     id: i.id,
+    sku: i.sku,
     name: i.name,
     imageUrl: i.imageUrl?.trim() || null,
     available: i.available,
@@ -655,13 +730,20 @@ export async function listAvailableMenuItems(tenantId: string): Promise<
 }
 
 export async function listMenuItemsWithPhotos(tenantId: string): Promise<
-  Array<{ id: string; name: string; imageUrl: string; available: boolean }>
+  Array<{
+    id: string;
+    sku: string;
+    name: string;
+    imageUrl: string;
+    available: boolean;
+  }>
 > {
   const items = await listAvailableMenuItems(tenantId);
   return items
     .filter((i) => Boolean(i.imageUrl))
     .map((i) => ({
       id: i.id,
+      sku: i.sku,
       name: i.name,
       imageUrl: i.imageUrl!,
       available: i.available,
@@ -671,14 +753,17 @@ export async function listMenuItemsWithPhotos(tenantId: string): Promise<
 export async function listUnavailableMenuItems(
   tenantId: string,
 ): Promise<Array<{ id: string; name: string }>> {
+  // 86'd items + third-party / exclude_from_content — never promote either.
   const items = await db
-    .select({ id: menuItemsTable.id, name: menuItemsTable.name })
+    .select({
+      id: menuItemsTable.id,
+      name: menuItemsTable.name,
+      available: menuItemsTable.available,
+      excludeFromContent: menuItemsTable.excludeFromContent,
+    })
     .from(menuItemsTable)
-    .where(
-      and(
-        eq(menuItemsTable.tenantId, tenantId),
-        eq(menuItemsTable.available, false),
-      ),
-    );
-  return items;
+    .where(eq(menuItemsTable.tenantId, tenantId));
+  return items
+    .filter((i) => !i.available || i.excludeFromContent)
+    .map((i) => ({ id: i.id, name: i.name }));
 }
