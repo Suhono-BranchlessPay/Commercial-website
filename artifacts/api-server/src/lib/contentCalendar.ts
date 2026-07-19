@@ -382,6 +382,21 @@ export async function updateContentCalendarPost(input: {
   return updated;
 }
 
+export type ClaimRecheckCode =
+  | "square_unavailable"
+  | "not_top_seller"
+  | "no_target_item";
+
+/** Structured fail-closed error so the dashboard can offer a mark-posted override. */
+export class ClaimRecheckError extends Error {
+  readonly code: ClaimRecheckCode;
+  constructor(code: ClaimRecheckCode, message: string) {
+    super(message);
+    this.name = "ClaimRecheckError";
+    this.code = code;
+  }
+}
+
 /**
  * Ranking claims (most-ordered, top seller, etc.) are stamped at generate time.
  * Re-check against live Square top products before approve / mark-posted.
@@ -401,8 +416,9 @@ export async function revalidateContentClaimAtPublish(
 
   const itemName = String(row.targetItemName || "").trim();
   if (!itemName) {
-    throw new Error(
-      "claim_recheck: ranking claim present but no target item — edit caption or set item",
+    throw new ClaimRecheckError(
+      "no_target_item",
+      "This post has a ranking claim (e.g. most-ordered) but no menu item is set. Edit the post or clear the claim before continuing.",
     );
   }
 
@@ -415,8 +431,9 @@ export async function revalidateContentClaimAtPublish(
 
   const topRes = await fetchSquareTopProducts(tenant.slug, 10);
   if (!topRes.ok) {
-    throw new Error(
-      "claim_recheck: Square reporting unavailable — remove ranking claim or retry later",
+    throw new ClaimRecheckError(
+      "square_unavailable",
+      "Can't verify the ranking claim — Square sales data is unavailable right now. Retry later. If this post is already live on Facebook, you can mark it posted with a note that the claim was not re-checked.",
     );
   }
   const topRows = parseTopProductRows(topRes.data);
@@ -425,13 +442,33 @@ export async function revalidateContentClaimAtPublish(
     itemNameInTopProducts(itemName, topRows, 5) ||
     itemNameInTopProducts(itemName, byQty, 5);
   if (!ok) {
-    throw new Error(
-      `claim_recheck failed: "${itemName}" is not in current top sellers — edit caption or clear ranking claim`,
+    throw new ClaimRecheckError(
+      "not_top_seller",
+      `Ranking claim may be outdated: "${itemName}" is not in current top sellers. Edit the caption before posting. If the post is already live, mark posted with a note.`,
     );
   }
 
   brief.claim_recheck = false;
   brief.claim_verified_at = new Date().toISOString();
+  delete brief.claim_unverified_at;
+  delete brief.claim_unverified_reason;
+  delete brief.claim_unverified_by;
+  return brief;
+}
+
+function briefWithUnverifiedClaim(
+  row: ContentCalendarRow,
+  note: string,
+  forcedBy: string,
+): Record<string, unknown> {
+  const brief =
+    row.designBrief && typeof row.designBrief === "object"
+      ? ({ ...row.designBrief } as Record<string, unknown>)
+      : {};
+  brief.claim_recheck = false;
+  brief.claim_unverified_at = new Date().toISOString();
+  brief.claim_unverified_reason = note.trim().slice(0, 500);
+  brief.claim_unverified_by = forcedBy.slice(0, 120);
   return brief;
 }
 
@@ -508,20 +545,45 @@ export async function rescheduleContentCalendarPost(input: {
 export async function markContentCalendarPosted(input: {
   tenantId: string;
   id: string;
+  /**
+   * Escape hatch when the post is already live (manual Facebook paste) but
+   * claim revalidation cannot pass (Square down / item no longer top).
+   * Requires forceNote for audit — approve stays fail-closed with no override.
+   */
+  forceUnverifiedClaim?: boolean;
+  forceNote?: string;
+  forcedBy?: string;
 }): Promise<ContentCalendarRow> {
   const row = await getContentCalendarRow(input.tenantId, input.id);
   if (!row) throw new Error("post not found");
   if (row.status !== "approved" && row.status !== "scheduled") {
     throw new Error("approve before marking posted");
   }
-  // Re-check again at publish time — sales mix can drift after approve.
-  const verifiedBrief = await revalidateContentClaimAtPublish(row);
+
+  let designBrief: Record<string, unknown> | null = null;
+  if (input.forceUnverifiedClaim) {
+    const note = String(input.forceNote || "").trim();
+    if (note.length < 8) {
+      throw new Error(
+        "To mark posted without claim verification, add a short note (why — e.g. already live on Facebook, Square down).",
+      );
+    }
+    designBrief = briefWithUnverifiedClaim(
+      row,
+      note,
+      input.forcedBy || "dashboard",
+    );
+  } else {
+    // Re-check again at publish time — sales mix can drift after approve.
+    designBrief = await revalidateContentClaimAtPublish(row);
+  }
+
   await db
     .update(contentCalendarTable)
     .set({
       status: "posted",
       postedAt: new Date(),
-      ...(verifiedBrief ? { designBrief: verifiedBrief } : {}),
+      ...(designBrief ? { designBrief } : {}),
       updatedAt: new Date(),
     })
     .where(eq(contentCalendarTable.id, input.id));
