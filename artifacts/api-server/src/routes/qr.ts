@@ -16,6 +16,12 @@ import {
 import { logger } from "../lib/logger";
 import { resolveTenant } from "../lib/tenant";
 import { slugifySeo } from "../lib/seoTags";
+import {
+  escapeHrefForUa,
+  isLikelyIosUa,
+  renderWebviewEscapeHtml,
+  shouldEscapeInAppBrowser,
+} from "../lib/webviewEscape";
 
 const router = Router();
 
@@ -154,8 +160,16 @@ router.get(
         itemId,
       );
 
-      // Await insert so Content Engine /s/ attribution is durable before redirect.
-      // Still never fail the diner redirect if logging breaks.
+      res.setHeader("Cache-Control", "no-store");
+
+      // Facebook/IG WebView: one clean Continue screen (not 302 into a warning maze).
+      // Continue opens /menu?src=… directly — does NOT re-hit /s/, so one human click.
+      const ua = String(req.headers["user-agent"] || "");
+      const serveEscape =
+        shouldEscapeInAppBrowser(ua) && req.query.stay !== "1";
+
+      // Await insert so Content Engine /s/ attribution is durable before response.
+      // Still never fail the diner path if logging breaks.
       try {
         await db.insert(qrScansTable).values({
           tenantId: tenant.id,
@@ -179,13 +193,36 @@ router.get(
             src: src ?? null,
             item: itemId,
             match_count: matches.length,
+            webview_escape: serveEscape,
           },
         });
       } catch (err: unknown) {
         logger.warn({ err, itemSlug, src }, "qr_scans insert failed (/s)");
       }
 
-      res.setHeader("Cache-Control", "no-store");
+      if (serveEscape) {
+        const brand =
+          typeof (tenant.theme as Record<string, unknown> | null)?.brandName ===
+          "string"
+            ? String((tenant.theme as Record<string, unknown>).brandName)
+            : tenant.name || "Order online";
+        const escapeHref = escapeHrefForUa(redirectUrl, ua);
+        res
+          .status(200)
+          .type("html")
+          .send(
+            renderWebviewEscapeHtml({
+              brandName: brand,
+              httpsTarget: redirectUrl,
+              escapeHref,
+              ios: isLikelyIosUa(ua),
+              src,
+              itemId,
+            }),
+          );
+        return;
+      }
+
       res.redirect(302, redirectUrl);
     } catch (err) {
       logger.error({ err, itemSlug }, "Short link /s/ redirect failed");

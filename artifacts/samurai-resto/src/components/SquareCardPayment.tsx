@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState, useImperativeHandle, forwardRef } from "react";
+import { useTenant } from "@/lib/tenant";
+import { trackAnalyticsEvent } from "@/lib/analytics";
+import { browserPaymentContext } from "@/lib/inAppBrowser";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -67,9 +70,55 @@ export const SquareCardPayment = forwardRef<SquareCardHandle, Props>(
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [ready, setReady] = useState(false);
+    const { tenant } = useTenant();
+    const tenantId = tenant?.tenantId;
 
     useEffect(() => {
       let cancelled = false;
+      const ctx = browserPaymentContext();
+
+      if (tenantId) {
+        trackAnalyticsEvent({
+          tenantId,
+          eventType: "square_card_init",
+          meta: { stage: "start", ...ctx },
+        });
+      }
+
+      if (!ctx.is_secure_context) {
+        setError(
+          "Card payments require a secure (HTTPS) page. Open this site in Safari.",
+        );
+        setLoading(false);
+        onReadyChange?.(false);
+        if (tenantId) {
+          trackAnalyticsEvent({
+            tenantId,
+            eventType: "square_card_error",
+            meta: { stage: "secure_context", ...ctx },
+          });
+        }
+        return;
+      }
+
+      const timeout = window.setTimeout(() => {
+        if (cancelled) return;
+        setLoading((still) => {
+          if (!still) return still;
+          setError(
+            "Card form is taking too long. If you're in Facebook or Instagram, open this page in Safari to pay.",
+          );
+          onReadyChange?.(false);
+          if (tenantId) {
+            trackAnalyticsEvent({
+              tenantId,
+              eventType: "square_card_timeout",
+              meta: { stage: "attach_timeout_12s", ...browserPaymentContext() },
+            });
+          }
+          return false;
+        });
+      }, 12000);
 
       (async () => {
         try {
@@ -79,6 +128,13 @@ export const SquareCardPayment = forwardRef<SquareCardHandle, Props>(
             setError("Online card payment is not configured.");
             setLoading(false);
             onReadyChange?.(false);
+            if (tenantId) {
+              trackAnalyticsEvent({
+                tenantId,
+                eventType: "square_card_error",
+                meta: { stage: "config_disabled", ...browserPaymentContext() },
+              });
+            }
             return;
           }
 
@@ -96,19 +152,41 @@ export const SquareCardPayment = forwardRef<SquareCardHandle, Props>(
           cardRef.current = card;
           setReady(true);
           setLoading(false);
+          setError(null);
           onReadyChange?.(true);
+          if (tenantId) {
+            trackAnalyticsEvent({
+              tenantId,
+              eventType: "square_card_ready",
+              meta: { stage: "attached", ...browserPaymentContext() },
+            });
+          }
         } catch (err) {
           if (cancelled) return;
-          setError(err instanceof Error ? err.message : "Card form failed to load");
+          const message =
+            err instanceof Error ? err.message : "Card form failed to load";
+          setError(message);
           setLoading(false);
           onReadyChange?.(false);
+          if (tenantId) {
+            trackAnalyticsEvent({
+              tenantId,
+              eventType: "square_card_error",
+              meta: {
+                stage: "init_exception",
+                message,
+                ...browserPaymentContext(),
+              },
+            });
+          }
         }
       })();
 
       return () => {
         cancelled = true;
+        window.clearTimeout(timeout);
       };
-    }, [onReadyChange]);
+    }, [onReadyChange, tenantId]);
 
     useImperativeHandle(ref, () => ({
       isReady: () => ready && Boolean(cardRef.current),

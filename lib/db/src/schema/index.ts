@@ -7,6 +7,7 @@ export * from "./settings";
 export * from "./bridge";
 export * from "./dashboard";
 export * from "./analytics";
+export * from "./cartShares";
 export * from "./qrScans";
 export * from "./onboarding";
 export * from "./squareOauthConnections";

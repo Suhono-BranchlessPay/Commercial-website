@@ -12,11 +12,20 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Minus, Plus, ShoppingBag, Trash2, Menu as MenuIcon } from "lucide-react";
 import { useState } from "react";
+import { OpenInSafariBanner } from "@/components/OpenInSafariBanner";
+import { isMetaInAppBrowser } from "@/lib/inAppBrowser";
+
+const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+
+/** Full navigation — FB WebView often no-ops SPA setLocation while a Sheet is closing. */
+function goToCheckout() {
+  const qs = typeof window !== "undefined" ? window.location.search || "" : "";
+  window.location.assign(`${BASE}/order${qs}`);
+}
 
 export function CartDrawer() {
   const { items, isCartOpen, setIsCartOpen, updateQuantity, removeItem, cartTotal } =
     useCart();
-  const [, setLocation] = useLocation();
 
   return (
     <Sheet open={isCartOpen} onOpenChange={setIsCartOpen}>
@@ -85,16 +94,19 @@ export function CartDrawer() {
         </div>
 
         {items.length > 0 && (
-          <div className="pt-4 border-t border-border mt-auto">
-            <div className="flex justify-between font-serif text-lg mb-6">
+          <div className="pt-4 border-t border-border mt-auto space-y-3">
+            <div className="flex justify-between font-serif text-lg">
               <span>Subtotal</span>
               <span>${cartTotal.toFixed(2)}</span>
             </div>
+            {/* Banner sits IN the drawer — layout banner is covered by this Sheet. */}
+            <OpenInSafariBanner compact surface="layout" />
             <Button
               className="w-full text-lg h-12 bg-primary hover:bg-primary/90 text-primary-foreground"
               onClick={() => {
                 setIsCartOpen(false);
-                setLocation("/order");
+                // Defer past Sheet unmount; hard nav survives FB WebView quirks.
+                window.setTimeout(goToCheckout, isMetaInAppBrowser() ? 50 : 0);
               }}
             >
               Checkout
@@ -246,7 +258,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       <main className="flex-1">{children}</main>
 
-      {cartCount > 0 && (
+      {/* Hide FAB on /order — it covers Pay / confirm controls in WebView & Safari. */}
+      {cartCount > 0 && !location.startsWith("/order") && (
         <button
           type="button"
           onClick={() => setIsCartOpen(true)}

@@ -8,6 +8,11 @@ import {
 import type { MenuItem } from "@workspace/api-client-react";
 import { useTenant } from "@/lib/tenant";
 import { trackAnalyticsEvent } from "@/lib/analytics";
+import {
+  readCartTokenFromUrl,
+  restoreCart,
+  stripCartTokenFromUrl,
+} from "@/lib/cartShare";
 
 export interface CartItem {
   menuItem: MenuItem;
@@ -44,22 +49,46 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!tenantId) return;
-    try {
-      const key = cartKey(tenantId);
-      let raw = localStorage.getItem(key);
-      // One-time migrate legacy Samurai cart key for tenant samurai
-      if (!raw && tenantId === "samurai") {
-        raw = localStorage.getItem(LEGACY_CART_KEY);
-        if (raw) {
-          localStorage.setItem(key, raw);
-          localStorage.removeItem(LEGACY_CART_KEY);
+    let cancelled = false;
+
+    (async () => {
+      const shareToken = readCartTokenFromUrl();
+      if (shareToken) {
+        const shared = await restoreCart(shareToken);
+        if (cancelled) return;
+        if (shared && shared.length > 0) {
+          setItems(shared);
+          stripCartTokenFromUrl();
+          setHydrated(true);
+          setIsCartOpen(true);
+          return;
         }
+        stripCartTokenFromUrl();
       }
-      setItems(raw ? (JSON.parse(raw) as CartItem[]) : []);
-    } catch {
-      setItems([]);
-    }
-    setHydrated(true);
+
+      try {
+        const key = cartKey(tenantId);
+        let raw = localStorage.getItem(key);
+        // One-time migrate legacy Samurai cart key for tenant samurai
+        if (!raw && tenantId === "samurai") {
+          raw = localStorage.getItem(LEGACY_CART_KEY);
+          if (raw) {
+            localStorage.setItem(key, raw);
+            localStorage.removeItem(LEGACY_CART_KEY);
+          }
+        }
+        if (!cancelled) {
+          setItems(raw ? (JSON.parse(raw) as CartItem[]) : []);
+        }
+      } catch {
+        if (!cancelled) setItems([]);
+      }
+      if (!cancelled) setHydrated(true);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [tenantId]);
 
   useEffect(() => {

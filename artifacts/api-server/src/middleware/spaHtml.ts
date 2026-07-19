@@ -31,6 +31,7 @@ import {
 import { getSeoChrome } from "../lib/seoI18n";
 import { absoluteLocaleUrl, parseLocalePath } from "../lib/seoLocales";
 import { logger } from "../lib/logger";
+import { setStorefrontCspHeader } from "../lib/storefrontCsp";
 
 /**
  * Directory of the Vite storefront build (contains index.html + assets).
@@ -192,6 +193,7 @@ export function createSpaHtmlHandler(
         );
         res.setHeader("Content-Type", "text/html; charset=utf-8");
         res.setHeader("Cache-Control", "public, max-age=300");
+        setStorefrontCspHeader(res);
         res.status(200).send(html);
         return;
       }
@@ -272,6 +274,7 @@ export function createSpaHtmlHandler(
         );
         res.setHeader("Content-Type", "text/html; charset=utf-8");
         res.setHeader("Cache-Control", "public, max-age=300");
+        setStorefrontCspHeader(res);
         res.status(200).send(html);
         return;
       }
@@ -370,6 +373,7 @@ export function createSpaHtmlHandler(
           );
           res.setHeader("Content-Type", "text/html; charset=utf-8");
           res.setHeader("Cache-Control", "public, max-age=300");
+          setStorefrontCspHeader(res);
           res.status(200).send(html);
           return;
         }
@@ -401,6 +405,7 @@ export function createSpaHtmlHandler(
       );
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.setHeader("Cache-Control", "no-store");
+      setStorefrontCspHeader(res);
       res.status(200).send(html);
     } catch (err) {
       logger.error({ err }, "SPA tenant HTML injection failed");

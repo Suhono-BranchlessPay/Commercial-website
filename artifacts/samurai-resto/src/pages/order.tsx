@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, ArrowRight, CheckCircle2, ShoppingBag, Loader2, Pencil, MapPin, Phone, User, Package, CreditCard } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { SquareCardPayment, type SquareCardHandle } from "@/components/SquareCardPayment";
+import { OpenInSafariBanner } from "@/components/OpenInSafariBanner";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import {
   displayName,
@@ -284,6 +285,11 @@ export default function Order() {
     const data = form.getValues();
 
     if (!cardRef.current?.isReady()) {
+      trackAnalyticsEvent({
+        tenantId,
+        eventType: "checkout_pay_fail",
+        meta: { stage: "card_not_ready" },
+      });
       toast({
         title: "Payment required",
         description: "Enter your card details to complete your order.",
@@ -292,13 +298,31 @@ export default function Order() {
       return;
     }
 
+    trackAnalyticsEvent({
+      tenantId,
+      eventType: "checkout_pay_attempt",
+      meta: { stage: "tokenize_start", itemCount: items.length },
+    });
+
     let squarePaymentSourceId: string;
     try {
       squarePaymentSourceId = await cardRef.current.tokenize();
+      trackAnalyticsEvent({
+        tenantId,
+        eventType: "square_tokenize_ok",
+        meta: { stage: "tokenize" },
+      });
     } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not process card.";
+      trackAnalyticsEvent({
+        tenantId,
+        eventType: "square_tokenize_fail",
+        meta: { stage: "tokenize", message },
+      });
       toast({
         title: "Payment failed",
-        description: err instanceof Error ? err.message : "Could not process card.",
+        description: message,
         variant: "destructive",
       });
       return;
@@ -377,6 +401,11 @@ export default function Order() {
           const data = (error as { data?: { error?: string } }).data;
           if (data?.error) description = data.error;
         }
+        trackAnalyticsEvent({
+          tenantId,
+          eventType: "checkout_pay_fail",
+          meta: { stage: "charge", message: description },
+        });
         toast({ title: "Payment failed", description, variant: "destructive" });
       },
     });
@@ -433,11 +462,6 @@ export default function Order() {
           {!successTrackingUrl && values.orderType === "delivery" && (
             <p className="text-xs text-muted-foreground mb-6">
               Tracking link will be sent when your Dasher is assigned.
-            </p>
-          )}
-          {values.orderType === "pickup" && (
-            <p className="text-xs text-muted-foreground mb-6">
-              We&apos;ll call you at {values.customerPhone} when your order is ready.
             </p>
           )}
           <Button asChild className="w-full h-12 text-base bg-primary hover:bg-primary/90 text-white">
@@ -769,6 +793,7 @@ export default function Order() {
               <p className="text-sm text-muted-foreground">
                 Pay in full now with your card. Your order is sent to the kitchen only after payment succeeds.
               </p>
+              <OpenInSafariBanner surface="checkout" />
               {checkoutEnabled === false && (
                 <p className="text-sm text-destructive">
                   Online payment is not available right now. Please call the restaurant.
@@ -779,6 +804,11 @@ export default function Order() {
                   <CreditCard className="h-4 w-4 text-primary" /> Card details
                 </p>
                 <SquareCardPayment ref={cardRef} onReadyChange={setCardReady} />
+                {!cardReady && checkoutEnabled !== false && (
+                  <p className="text-xs text-amber-800 mt-2">
+                    If Pay stays disabled, you&apos;re likely in Facebook&apos;s browser — open this page in Safari to pay.
+                  </p>
+                )}
               </div>
             </div>
 
