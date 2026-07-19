@@ -2,6 +2,7 @@ import {
   buildBioSrcSlug,
   buildCalendarSrcSlug,
   captionHasBannedClaim,
+  ClaimRecheckError,
   maxHookWordsForPlatform,
   platformSrcPrefix,
   suggestTimeBeforePeak,
@@ -197,6 +198,12 @@ describe("content calendar helpers", () => {
         { name: "Shrimp Bento" },
       ]),
     ).toBe(false);
+    const err = new ClaimRecheckError(
+      "square_unavailable",
+      "Can't verify the ranking claim",
+    );
+    expect(err.code).toBe("square_unavailable");
+    expect(err).toBeInstanceOf(Error);
   });
 
   test("parse content calendar JSON", () => {

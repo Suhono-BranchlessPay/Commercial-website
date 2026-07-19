@@ -64,6 +64,7 @@ import {
 } from "../lib/socialPosting";
 import {
   approveContentCalendarPost,
+  ClaimRecheckError,
   getContentCalendarConfig,
   listContentCalendar,
   markContentCalendarPosted,
@@ -1769,6 +1770,15 @@ router.post(
         fullPost: `${post.hook}\n\n${post.caption}\n\n${(post.hashtags || []).map((h: string) => `#${h}`).join(" ")}`.trim(),
       });
     } catch (err) {
+      if (err instanceof ClaimRecheckError) {
+        // Approve stays fail-closed — no force override (post not live yet).
+        res.status(409).json({
+          error: err.message,
+          code: err.code,
+          allow_force: false,
+        });
+        return;
+      }
       res.status(400).json({
         error: err instanceof Error ? err.message : "Approve failed",
       });
@@ -1847,7 +1857,11 @@ router.post(
   async (req, res): Promise<void> => {
     try {
       const user = req.dashboardUser!;
-      const body = (req.body ?? {}) as { tenant_id?: string };
+      const body = (req.body ?? {}) as {
+        tenant_id?: string;
+        force_unverified_claim?: boolean;
+        force_note?: string;
+      };
       const scope = resolveScopedTenantId(user, body.tenant_id || null);
       if (!scope.ok) {
         res.status(403).json({ error: scope.error });
@@ -1860,9 +1874,20 @@ router.post(
       const post = await markContentCalendarPosted({
         tenantId: scope.tenantId,
         id: String(req.params.id),
+        forceUnverifiedClaim: body.force_unverified_claim === true,
+        forceNote: body.force_note,
+        forcedBy: user.email || user.id,
       });
       res.json({ ok: true, post });
     } catch (err) {
+      if (err instanceof ClaimRecheckError) {
+        res.status(409).json({
+          error: err.message,
+          code: err.code,
+          allow_force: true,
+        });
+        return;
+      }
       res.status(400).json({
         error: err instanceof Error ? err.message : "Mark posted failed",
       });

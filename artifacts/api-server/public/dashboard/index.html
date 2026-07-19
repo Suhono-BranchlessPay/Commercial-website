@@ -625,7 +625,12 @@ async function api(path, opts = {}) {
   const text = await res.text();
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = { error: text }; }
-  if (!res.ok) throw new Error((data && data.error) || res.statusText || 'Request failed');
+  if (!res.ok) {
+    const err = new Error((data && data.error) || res.statusText || 'Request failed');
+    err.code = data && data.code;
+    err.allowForce = data && data.allow_force === true;
+    throw err;
+  }
   return data;
 }
 async function socialApi(path, opts = {}) {
@@ -1833,15 +1838,47 @@ $('contentCalCopyBtn').addEventListener('click', async () => {
 $('contentCalMarkBtn').addEventListener('click', async () => {
   const tenant = $('tenant').value;
   if (!tenant || !contentCalActiveId) return;
-  try {
+  async function markPosted(extra) {
     await api('/content-calendar/' + contentCalActiveId + '/mark-posted', {
       method: 'POST',
-      body: JSON.stringify({ tenant_id: tenant }),
+      body: JSON.stringify(Object.assign({ tenant_id: tenant }, extra || {})),
     });
     $('contentCalMsg').style.display = 'block';
     $('contentCalMsg').textContent = 'Marked posted. Closed-loop metrics use multi-day lookback.';
     await loadContentCalendar();
+  }
+  try {
+    await markPosted();
   } catch (e) {
+    if (e.allowForce) {
+      const ok = confirm(
+        (e.message || 'Claim could not be verified.') +
+        '\n\nPost already live on Facebook/IG? OK to mark posted with a note (claim stays unverified). Cancel to retry later.',
+      );
+      if (!ok) {
+        $('contentCalMsg').style.display = 'block';
+        $('contentCalMsg').textContent = e.message || 'Mark posted failed';
+        return;
+      }
+      const note = prompt(
+        'Short note for the audit log (required):',
+        'Already posted manually; Square claim check unavailable',
+      );
+      if (!note || String(note).trim().length < 8) {
+        $('contentCalMsg').style.display = 'block';
+        $('contentCalMsg').textContent = 'Mark posted cancelled — note required to record without claim verification.';
+        return;
+      }
+      try {
+        await markPosted({ force_unverified_claim: true, force_note: String(note).trim() });
+        $('contentCalMsg').textContent = 'Marked posted with unverified ranking claim (note saved).';
+        return;
+      } catch (e2) {
+        $('contentCalMsg').style.display = 'block';
+        $('contentCalMsg').textContent = e2.message || 'Mark posted failed';
+        return;
+      }
+    }
     $('contentCalMsg').style.display = 'block';
     $('contentCalMsg').textContent = e.message || 'Mark posted failed';
   }
