@@ -44,6 +44,7 @@ import {
 } from "./socialConfig";
 import {
   fetchRecentPageComments,
+  fetchRecentPageTaggedPosts,
   replyToMetaComment,
   sendMetaMessengerMessage,
 } from "../integrations/metaGraph";
@@ -167,9 +168,9 @@ export function sanitizeInboundText(raw: string | null | undefined): string | nu
 export type CreateInboxInput = {
   tenantId: string;
   platform: "facebook" | "instagram";
-  /** "comment" (Page/IG feed) or "message" (Messenger/IG DM) — stored on
-   * `raw.kind` so `sendApprovedReply()` knows which Graph API call to make. */
-  kind?: "comment" | "message";
+  /** Stored on `raw.kind` so `sendApprovedReply()` knows which Graph call to make.
+   *  mention = tagged/visitor post (reply via /{post-id}/comments). */
+  kind?: "comment" | "message" | "mention";
   externalThreadId?: string | null;
   externalMessageId?: string | null;
   authorName?: string | null;
@@ -785,6 +786,85 @@ export async function backfillMetaComments(input: {
   };
 }
 
+/**
+ * Backfill Page tags / visitor mentions from GET /me/tagged.
+ * These never appear as comments on the Page's own posts — the Cole-style
+ * "highly recommend" posts live here. Read-only against Meta; never sends.
+ */
+export async function backfillMetaTaggedPosts(input: {
+  tenantId: string;
+  limit?: number;
+}): Promise<BackfillResult> {
+  const token = getMetaPageAccessToken(input.tenantId);
+  if (!token) {
+    return {
+      ok: false,
+      fetched: 0,
+      ingested: 0,
+      duplicates: 0,
+      drafted: 0,
+      error: "META_PAGE_ACCESS_TOKEN not configured for this tenant",
+    };
+  }
+
+  const fetched = await fetchRecentPageTaggedPosts(token, {
+    limit: input.limit,
+  });
+  if (!fetched.ok) {
+    return {
+      ok: false,
+      fetched: 0,
+      ingested: 0,
+      duplicates: 0,
+      drafted: 0,
+      error: fetched.error,
+    };
+  }
+
+  let ingested = 0;
+  let duplicates = 0;
+  let drafted = 0;
+  for (const p of fetched.posts) {
+    const row = await ingestInboundMessage({
+      tenantId: input.tenantId,
+      platform: "facebook",
+      kind: "mention",
+      externalThreadId: p.postId,
+      externalMessageId: p.postId,
+      authorName: p.authorName,
+      body: p.message,
+      externalCreatedAt: p.createdTime,
+      raw: {
+        pageId: fetched.pageId,
+        authorId: p.authorId,
+        createdTime: p.createdTime,
+        permalinkUrl: p.permalinkUrl,
+        source: "meta_tagged_backfill",
+        kind: "mention",
+      },
+    });
+    if (row) {
+      ingested += 1;
+      try {
+        await autoDraftForRow(row);
+        drafted += 1;
+      } catch {
+        /* non-fatal */
+      }
+    } else {
+      duplicates += 1;
+    }
+  }
+
+  return {
+    ok: true,
+    fetched: fetched.posts.length,
+    ingested,
+    duplicates,
+    drafted,
+  };
+}
+
 export type ApproveResult =
   | { ok: true; row: SocialInboxRow }
   | { ok: false; error: string };
@@ -881,11 +961,13 @@ function resolveSendTarget(row: SocialInboxRow): SendTarget {
     return { ok: true, kind: "message", recipientPsid };
   }
 
+  // comment + mention both reply via POST /{id}/comments (comment id or post id).
   const commentId = row.externalMessageId?.trim();
   if (!commentId) {
     return {
       ok: false,
-      error: "Missing external_message_id (Meta comment id) on this row — cannot reply without it.",
+      error:
+        "Missing external_message_id (Meta comment/post id) on this row — cannot reply without it.",
     };
   }
   return { ok: true, kind: "comment", commentId };
