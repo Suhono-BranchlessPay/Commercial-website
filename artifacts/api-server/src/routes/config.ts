@@ -3,11 +3,13 @@ import {
   getTenantId,
   GOOGLE_MAPS_API_KEY,
 } from "../lib/tenant";
+import { resolveTenantTaxRate, taxRateLabel } from "../lib/tenantTax";
+import { isSquareWebPaymentsConfigured } from "../integrations/square";
 
 const router = Router();
 
 /** Public checkout config — no secrets beyond Maps key (domain-restricted in Google Cloud). */
-router.get("/config/checkout", (req, res): void => {
+router.get("/config/checkout", async (req, res): Promise<void> => {
   const tenant = req.tenant;
   const tenantId = tenant?.id ?? getTenantId();
   const lat = tenant?.lat ?? Number(process.env.RESTAURANT_LAT ?? "39.4277084");
@@ -15,6 +17,10 @@ router.get("/config/checkout", (req, res): void => {
   const radiusMiles =
     tenant?.serviceAreaRadius ??
     Number(process.env.DELIVERY_RADIUS_MILES ?? "12");
+
+  const taxRate = resolveTenantTaxRate(tenant);
+  const slug = tenant?.slug ?? tenantId;
+  const paymentsEnabled = await isSquareWebPaymentsConfigured(slug);
 
   res.json({
     tenantId,
@@ -24,6 +30,11 @@ router.get("/config/checkout", (req, res): void => {
     faviconUrl: tenant?.faviconUrl ?? null,
     hours: tenant?.hours ?? null,
     showPoweredBy: tenant?.showPoweredBy !== false,
+    /** null = fail-closed — UI must not invent another outlet's rate */
+    taxRate,
+    taxRateLabel: taxRate == null ? null : taxRateLabel(taxRate),
+    /** false when TENANT_{slug}_SQUARE_* / OAuth missing — do not take payment */
+    paymentsEnabled,
     googleMapsApiKey: GOOGLE_MAPS_API_KEY || null,
     places: {
       country: "us",

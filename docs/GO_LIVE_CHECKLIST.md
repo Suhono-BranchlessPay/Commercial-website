@@ -12,13 +12,16 @@ SOP before any restaurant goes live on Orderly. Use for **Kirin**, **Samurai Lin
 - [ ] Dashboard manager login works for this tenant scope (orderlyfoods.com/dashboard)
 - [ ] BP license / tenant secrets only in server env (never git, never client JS)
 
-## 2. Square
+## 2. Square & tax (fail-closed — see also TENANT_ONBOARDING_CHECKLIST.md)
 
-- [ ] Square application + location wired for this tenant
+- [ ] `TENANT_{SLUG}_SQUARE_*` **or** OAuth row for **this** tenant (never bare `SQUARE_*` fallback)
+- [ ] `/api/square/config` on this Host returns **this** locationId — or `enabled:false` (not another outlet)
+- [ ] `tenants.tax_rate` set for this jurisdiction (NULL refuses checkout)
 - [ ] Sandbox vs production credentials match intended environment
 - [ ] Catalog / menu items match Orderly menu IDs (or push path documented)
 - [ ] Test card charge succeeds on the storefront for this host
 - [ ] Square POS / Order Hub receives the order (items + notes + tip if tipped)
+- [ ] Tax cents on the test order match the local rate (not another state’s %)
 
 ## 3. Menu & catalog
 
@@ -90,4 +93,6 @@ SOP before any restaurant goes live on Orderly. Use for **Kirin**, **Samurai Lin
 
 ---
 
-*Last updated: 13 Jul 2026 — Orderly Platform*
+**Full onboarding (isolation, tax, DNS, ops):** [`TENANT_ONBOARDING_CHECKLIST.md`](./TENANT_ONBOARDING_CHECKLIST.md)
+
+*Last updated: 20 Jul 2026 — Orderly Platform*

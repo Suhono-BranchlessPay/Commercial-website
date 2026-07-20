@@ -6,7 +6,7 @@
 import type { StructuredAddress } from "../lib/address";
 import {
   SQUARE_ORDER_SOURCE_NAME,
-  tenantSecret,
+  tenantOnlySecret,
 } from "../lib/tenant";
 import { resolveSquareCredsFromDb } from "../lib/squareOauth";
 
@@ -76,16 +76,22 @@ export type SquareCreds = {
 type CatalogVariation = { id: string; version: number };
 const catalogBySku = new Map<string, CatalogVariation>();
 
-/** Existing manual/env-token path (e.g. Samurai) — unchanged, fully synchronous. */
-function resolveSquareCredsFromEnv(slug: string): SquareCreds | null {
-  const accessToken = tenantSecret(slug, "SQUARE_ACCESS_TOKEN");
-  const locationId = tenantSecret(slug, "SQUARE_LOCATION_ID");
-  const applicationId = tenantSecret(slug, "SQUARE_APPLICATION_ID");
-  if (!accessToken || !locationId || !applicationId) return null;
-  const environment =
-    tenantSecret(slug, "SQUARE_ENVIRONMENT") ??
-    process.env.SQUARE_ENVIRONMENT ??
-    "sandbox";
+/**
+ * Env path — FAIL-CLOSED per tenant (same anti-pattern fix as Meta CAPI).
+ * Uses TENANT_{SLUG}_SQUARE_* only. Never falls back to global SQUARE_* —
+ * that silently routed Kirin payments to Samurai's location.
+ *
+ * Samurai production must set TENANT_SAMURAI_SQUARE_* (mirror former SQUARE_*).
+ * Exported for unit tests.
+ */
+export function resolveSquareCredsFromEnv(slug: string): SquareCreds | null {
+  const accessToken = tenantOnlySecret(slug, "SQUARE_ACCESS_TOKEN");
+  const locationId = tenantOnlySecret(slug, "SQUARE_LOCATION_ID");
+  const applicationId = tenantOnlySecret(slug, "SQUARE_APPLICATION_ID");
+  const environment = tenantOnlySecret(slug, "SQUARE_ENVIRONMENT");
+  if (!accessToken || !locationId || !applicationId || !environment) {
+    return null;
+  }
   return {
     accessToken,
     locationId,
@@ -99,14 +105,9 @@ function resolveSquareCredsFromEnv(slug: string): SquareCreds | null {
 }
 
 /**
- * Env tenantSecret() ALWAYS wins when present (Samurai's path is untouched —
- * it never reaches the DB branch below). Only tenants onboarded via real
- * Square OAuth (Blok 3.1, no env tokens set) fall back to the encrypted
- * square_oauth_connections row for their tenant id. See lib/squareOauth.ts.
- *
- * Public + exported (Blok A) so other modules — e.g.
- * lib/squareMenuSync.ts — can resolve the same creds without duplicating
- * this env-first-then-OAuth-DB resolution logic.
+ * Env TENANT_{SLUG}_SQUARE_* first (fail-closed, no global SQUARE_*).
+ * Else Square OAuth row for that tenant (onboarding). Never borrow another
+ * tenant's credentials.
  */
 export async function getSquareCredsForTenantSlug(
   slug: string,
@@ -116,10 +117,12 @@ export async function getSquareCredsForTenantSlug(
 
   const dbCreds = await resolveSquareCredsFromDb(slug);
   if (!dbCreds) return null;
+  const applicationId = process.env.SQUARE_OAUTH_APPLICATION_ID?.trim() ?? "";
+  if (!applicationId) return null;
   return {
     accessToken: dbCreds.accessToken,
     locationId: dbCreds.locationId,
-    applicationId: process.env.SQUARE_OAUTH_APPLICATION_ID?.trim() ?? "",
+    applicationId,
     environment: dbCreds.environment,
     baseUrl:
       dbCreds.environment === "production"

@@ -47,6 +47,11 @@ export const tenantsTable = pgTable(
     processingFeePaidBy: text("processing_fee_paid_by")
       .notNull()
       .default("restaurant"),
+    /**
+     * Sales tax rate as a decimal (e.g. 0.07 = 7%). NULL = not configured —
+     * checkout must fail-closed (never invent another tenant's rate).
+     */
+    taxRate: real("tax_rate"),
     status: text("status").notNull().default("active"),
     /**
      * Block 5 seam (multi-vertical). "restaurant" keeps all existing
