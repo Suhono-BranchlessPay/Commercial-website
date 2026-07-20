@@ -1,8 +1,10 @@
 import {
   buildBioSrcSlug,
   buildCalendarSrcSlug,
+  buildPageCtaSrcSlug,
   captionHasBannedClaim,
   ClaimRecheckError,
+  isEvergreenSurfaceSrc,
   maxHookWordsForPlatform,
   platformSrcPrefix,
   suggestTimeBeforePeak,
@@ -59,6 +61,16 @@ describe("content calendar helpers", () => {
     expect(buildBioSrcSlug("instagram")).toBe("ig-bio");
     expect(maxHookWordsForPlatform("tiktok")).toBe(5);
     expect(maxHookWordsForPlatform("facebook")).toBe(8);
+  });
+
+  test("Page CTA evergreen src is undated; historical dated slug still recognized", () => {
+    expect(buildPageCtaSrcSlug()).toBe("fb-page-cta");
+    expect(isEvergreenSurfaceSrc("fb-page-cta")).toBe(true);
+    expect(isEvergreenSurfaceSrc("fb-page-cta-20260718")).toBe(true);
+    expect(isEvergreenSurfaceSrc("fb-about-20260718")).toBe(true);
+    expect(isEvergreenSurfaceSrc("ig-bio")).toBe(true);
+    expect(isEvergreenSurfaceSrc("fb-hibachichicken-20260718")).toBe(false);
+    expect(isEvergreenSurfaceSrc("facebook_organic_fbclid")).toBe(false);
   });
 
   test("suggest time before peak", () => {
