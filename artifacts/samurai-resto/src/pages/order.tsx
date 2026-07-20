@@ -116,6 +116,8 @@ export default function Order() {
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [cardReady, setCardReady] = useState(false);
   const [checkoutEnabled, setCheckoutEnabled] = useState<boolean | null>(null);
+  const [taxRate, setTaxRate] = useState<number | null>(null);
+  const [taxRateLabel, setTaxRateLabel] = useState<string>("Tax");
   const [tenantId, setTenantId] = useState("default");
   const [addressUnit, setAddressUnit] = useState("");
   const [tipPreset, setTipPreset] = useState<"none" | 15 | 18 | 20 | "custom">("none");
@@ -157,9 +159,23 @@ export default function Order() {
 
     fetch(`${API_BASE}/api/config/checkout`)
       .then((r) => r.json())
-      .then((c: { tenantId?: string }) => {
+      .then((c: {
+        tenantId?: string;
+        taxRate?: number | null;
+        taxRateLabel?: string | null;
+        paymentsEnabled?: boolean;
+      }) => {
         const tid = c.tenantId ?? "default";
         setTenantId(tid);
+        if (typeof c.taxRate === "number" && Number.isFinite(c.taxRate)) {
+          setTaxRate(c.taxRate);
+          const pct = c.taxRateLabel || `${Math.round(c.taxRate * 1000) / 10}%`;
+          setTaxRateLabel(`Tax (${pct})`);
+        } else {
+          setTaxRate(null);
+          setTaxRateLabel("Tax (unavailable)");
+        }
+        if (c.paymentsEnabled === false) setCheckoutEnabled(false);
         const saved = loadCheckoutProfile(tid);
         if (saved) {
           form.reset({
@@ -179,7 +195,7 @@ export default function Order() {
 
   const values    = form.getValues();
   const orderType = form.watch("orderType");
-  const tax       = cartTotal * 0.07;
+  const tax       = taxRate == null ? 0 : cartTotal * taxRate;
   const baseTotal = orderType === "delivery" && deliveryQuote
     ? deliveryQuote.grandTotal
     : cartTotal + tax;
@@ -273,10 +289,13 @@ export default function Order() {
       });
       return;
     }
-    if (!checkoutEnabled) {
+    if (!checkoutEnabled || taxRate == null) {
       toast({
         title: "Checkout unavailable",
-        description: "Please call the restaurant to place your order.",
+        description:
+          taxRate == null
+            ? "Sales tax is not configured for this restaurant yet. Please call to order."
+            : "Please call the restaurant to place your order.",
         variant: "destructive",
       });
       return;
@@ -535,7 +554,7 @@ export default function Order() {
                     <span>Subtotal</span><span>${cartTotal.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-sm text-muted-foreground">
-                    <span>Tax (7%)</span><span>${tax.toFixed(2)}</span>
+                    <span>{taxRateLabel}</span><span>${taxRate == null ? "—" : tax.toFixed(2)}</span>
                   </div>
                   <Separator />
                   <div className="flex justify-between font-serif text-xl font-bold text-foreground pt-1">
@@ -688,7 +707,7 @@ export default function Order() {
               </div>
               <div className="px-6 py-4 border-t border-border bg-muted/20 space-y-2">
                 <div className="flex justify-between text-sm text-muted-foreground"><span>Subtotal</span><span>${cartTotal.toFixed(2)}</span></div>
-                <div className="flex justify-between text-sm text-muted-foreground"><span>Tax (7%)</span><span>${tax.toFixed(2)}</span></div>
+                <div className="flex justify-between text-sm text-muted-foreground"><span>{taxRateLabel}</span><span>${taxRate == null ? "—" : tax.toFixed(2)}</span></div>
                 {values.orderType === "delivery" && deliveryQuote && (
                   <div className="flex justify-between text-sm text-muted-foreground">
                     <span>Delivery</span><span>${deliveryQuote.deliveryFee.toFixed(2)}</span>
@@ -794,9 +813,11 @@ export default function Order() {
                 Pay in full now with your card. Your order is sent to the kitchen only after payment succeeds.
               </p>
               <OpenInSafariBanner surface="checkout" />
-              {checkoutEnabled === false && (
+              {(checkoutEnabled === false || taxRate == null) && (
                 <p className="text-sm text-destructive">
-                  Online payment is not available right now. Please call the restaurant.
+                  {taxRate == null
+                    ? "Sales tax is not configured for this restaurant. Online checkout is disabled."
+                    : "Online payment is not available right now. Please call the restaurant."}
                 </p>
               )}
               <div>
@@ -822,6 +843,7 @@ export default function Order() {
                   createOrder.isPending ||
                   !cardReady ||
                   checkoutEnabled === false ||
+                  taxRate == null ||
                   ordersPaused
                 }
                 className="flex-2 flex-[2] bg-primary hover:bg-primary/90 text-white h-14 text-base shadow-lg shadow-primary/20"

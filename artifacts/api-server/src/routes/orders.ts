@@ -43,6 +43,7 @@ import {
 import { displayName } from "../lib/phone";
 import { withOpsTestSourceDetail } from "../lib/orderTestExclusion";
 import { envFallbackTenant, getTenantId } from "../lib/tenant";
+import { resolveTenantTaxRate } from "../lib/tenantTax";
 import {
   buildOrderMoneyCents,
   centsToDollars,
@@ -244,7 +245,16 @@ router.post("/orders", async (req, res): Promise<void> => {
       }
     }
 
-    const TAX_RATE = 0.07;
+    const taxRate = resolveTenantTaxRate(tenant);
+    if (taxRate == null) {
+      res.status(503).json({
+        error:
+          "Sales tax is not configured for this restaurant. Ordering is temporarily unavailable.",
+        code: "tax_rate_unconfigured",
+      });
+      return;
+    }
+
     let subtotalCents = 0;
     const lines = input.items.map((item) => {
       const menuItem = menuItemMap[item.menuItemId];
@@ -262,7 +272,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       };
     });
 
-    const taxCents = Math.round(subtotalCents * TAX_RATE);
+    const taxCents = Math.round(subtotalCents * taxRate);
     const orderId = randomUUID();
 
     let deliveryFeeCents = 0;

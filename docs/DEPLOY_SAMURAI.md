@@ -22,3 +22,21 @@ Do **not**:
 - Call `deploy-samurai-assets.sh` by hand as “the deploy” (it is an internal helper only)
 
 Host: `46.202.179.234` · app dir `/var/www/samurai-resto` · PM2 app `samurai-api`
+
+### Square money path (fail-closed)
+
+Payments use **`TENANT_{SLUG}_SQUARE_*` only** (or that tenant’s OAuth row). Global `SQUARE_*` is not a fallback.
+
+Before/after deploying the fail-closed change, ensure Samurai has:
+
+```text
+TENANT_SAMURAI_SQUARE_ACCESS_TOKEN
+TENANT_SAMURAI_SQUARE_LOCATION_ID
+TENANT_SAMURAI_SQUARE_APPLICATION_ID
+TENANT_SAMURAI_SQUARE_ENVIRONMENT=production
+```
+
+(mirror the former unprefixed `SQUARE_*` values). New outlets (Kirin, …) never share those keys.
+
+Tax: `tenants.tax_rate` per outlet — see `scripts/migrate-tenant-tax-rate.sql`.  
+Onboarding: `docs/TENANT_ONBOARDING_CHECKLIST.md`.

@@ -28,6 +28,10 @@ export type TenantContext = {
   languages: string[];
   serviceFee: Record<string, unknown>;
   processingFeePaidBy: string;
+  /**
+   * Sales tax decimal (0.07 = 7%). null = not configured — checkout fail-closed.
+   */
+  taxRate: number | null;
   status: string;
   /** Footer "Powered by Orderly" — default true. */
   showPoweredBy: boolean;
@@ -96,6 +100,10 @@ export function toTenantContext(row: Tenant): TenantContext {
     languages: (row.languages as string[]) ?? ["en"],
     serviceFee: (row.serviceFee as Record<string, unknown>) ?? {},
     processingFeePaidBy: row.processingFeePaidBy,
+    taxRate:
+      (row as { taxRate?: number | null }).taxRate == null
+        ? null
+        : Number((row as { taxRate?: number | null }).taxRate),
     status: row.status,
     showPoweredBy:
       (row as { showPoweredBy?: boolean | null }).showPoweredBy !== false,
@@ -141,6 +149,13 @@ export function envFallbackTenant(): TenantContext {
     languages: ["en"],
     serviceFee: {},
     processingFeePaidBy: "restaurant",
+    // Fail-closed unless explicitly set for offline/dev fallback.
+    taxRate: (() => {
+      const raw = process.env[`TENANT_${id.toUpperCase()}_TAX_RATE`];
+      if (raw == null || raw === "") return null;
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : null;
+    })(),
     status: "active",
     showPoweredBy: true,
     pickupAddressFormatted: `${address}, ${city}, ${state} ${postcode}`,

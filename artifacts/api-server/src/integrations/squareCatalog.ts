@@ -1,8 +1,9 @@
 /**
  * Square Catalog upsert for human-approved menu imports (C1).
  * Only called from Orderly backend after Bridge import with publish_to_square=true.
+ * Credentials: fail-closed via getSquareCredsForTenantSlug (no global SQUARE_* borrow).
  */
-import { tenantSecret } from "../lib/tenant";
+import { getSquareCredsForTenantSlug } from "./square";
 
 const SQUARE_API_VERSION = "2024-11-20";
 
@@ -12,25 +13,6 @@ type SquareCreds = {
   environment: string;
   baseUrl: string;
 };
-
-function resolveSquareCreds(slug: string): SquareCreds | null {
-  const accessToken = tenantSecret(slug, "SQUARE_ACCESS_TOKEN");
-  const locationId = tenantSecret(slug, "SQUARE_LOCATION_ID");
-  if (!accessToken || !locationId) return null;
-  const environment =
-    tenantSecret(slug, "SQUARE_ENVIRONMENT") ??
-    process.env.SQUARE_ENVIRONMENT ??
-    "sandbox";
-  return {
-    accessToken,
-    locationId,
-    environment,
-    baseUrl:
-      environment === "production"
-        ? "https://connect.squareup.com"
-        : "https://connect.squareupsandbox.com",
-  };
-}
 
 async function squareJson<T>(
   creds: SquareCreds,
@@ -70,10 +52,10 @@ export async function upsertSquareCatalogItem(input: {
   priceCents: number;
   sku: string;
 }): Promise<{ catalogObjectId: string }> {
-  const creds = resolveSquareCreds(input.tenantSlug);
+  const creds = await getSquareCredsForTenantSlug(input.tenantSlug);
   if (!creds) {
     throw new Error(
-      `Square credentials missing for tenant slug ${input.tenantSlug}`,
+      `Square credentials missing for tenant slug ${input.tenantSlug} (TENANT_${input.tenantSlug.toUpperCase()}_SQUARE_* or OAuth required)`,
     );
   }
 

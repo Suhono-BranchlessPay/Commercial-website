@@ -13,6 +13,7 @@ import {
   structuredAddressSchema,
 } from "../lib/address";
 import { getTenantId, envFallbackTenant } from "../lib/tenant";
+import { resolveTenantTaxRate } from "../lib/tenantTax";
 
 const router = Router();
 
@@ -63,7 +64,16 @@ router.post("/delivery/quote", async (req, res): Promise<void> => {
     return;
   }
 
-  const TAX_RATE = 0.07;
+  const taxRate = resolveTenantTaxRate(tenant);
+  if (taxRate == null) {
+    res.status(503).json({
+      error:
+        "Sales tax is not configured for this restaurant. Delivery quotes are unavailable.",
+      code: "tax_rate_unconfigured",
+    });
+    return;
+  }
+
   let subtotal = 0;
 
   for (const item of input.items) {
@@ -80,7 +90,7 @@ router.post("/delivery/quote", async (req, res): Promise<void> => {
     subtotal += price * item.quantity;
   }
 
-  const tax = Math.round(subtotal * TAX_RATE * 100) / 100;
+  const tax = Math.round(subtotal * taxRate * 100) / 100;
   const orderValueCents = Math.round((subtotal + tax) * 100);
 
   try {
