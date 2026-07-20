@@ -7,24 +7,26 @@ export type DataQualityFlag = {
 };
 
 /**
- * Window where closed-loop attribution was incomplete:
+ * Window where closed-loop attribution / click→order was not trustworthy:
  * bare Facebook CTAs (no ?src=), first-touch bare-homepage bug,
- * and fbclid→src fallback only live from 2026-07-18 afternoon ET.
+ * fbclid→src fallback (~18 Jul afternoon), WebView checkout (#86 ~18 Jul night),
+ * and category-chip empty menu until PR #96 (~20 Jul morning ET).
  * Reports must not treat click→order gaps as "campaign failed".
  */
 export const ATTRIBUTION_INCOMPLETE_WINDOW = {
   start: "2026-07-16",
-  end: "2026-07-18",
-  code: "attribution_incomplete_20260716_18",
+  end: "2026-07-20",
+  code: "attribution_incomplete_20260716_20",
 } as const;
 
 /**
- * Facebook iOS WebView broke Square Pay until PR #86 (live ~18 Jul night ET).
+ * Facebook iOS WebView broke Square Pay until PR #86 (~18 Jul night ET);
+ * category chips still emptied the menu until PR #96 (~20 Jul morning ET).
  * Content Engine must not learn "FB posts don't convert" from campaigns posted
- * on or before this UTC date (covers fb-crabmeatbento-20260714, fb-beefbento, …).
+ * on or before this UTC date.
  */
 export const FB_WEBVIEW_LEARNING_CUTOFF = {
-  endInclusive: "2026-07-18",
+  endInclusive: "2026-07-20",
   code: "fb_webview_checkout_broken_pre_pr86",
 } as const;
 
@@ -39,10 +41,10 @@ export function attributionDataQualityFlags(
   ) {
     const message =
       lang === "id"
-        ? "Kualitas data atribusi tidak lengkap (16–18 Jul): banyak link Facebook tanpa ?src=, first-touch belum upgrade, dan fallback fbclid baru live 18 Jul sore. Jangan simpulkan kampanye gagal dari gap klik→order di jendela ini."
+        ? "Kualitas data atribusi tidak lengkap (16–20 Jul): link Facebook tanpa ?src=, first-touch, fallback fbclid (~18 Jul sore), WebView checkout (#86), dan chip kategori kosong sampai PR #96 (~20 Jul pagi). Jangan simpulkan kampanye gagal dari gap klik→order di jendela ini."
         : lang === "es"
-          ? "Calidad de datos de atribución incompleta (16–18 jul): muchos enlaces de Facebook sin ?src=, first-touch sin upgrade, y el fallback fbclid solo en vivo desde la tarde del 18 jul. No concluya que la campaña falló por brechas clic→pedido en esta ventana."
-          : "Attribution data quality incomplete (Jul 16–18): bare Facebook links (no ?src=), first-touch upgrade gap, and fbclid fallback only live from Jul 18 afternoon. Do not conclude the campaign failed from click→order gaps in this window.";
+          ? "Calidad de datos de atribución incompleta (16–20 jul): enlaces de Facebook sin ?src=, first-touch, fallback fbclid (~tarde del 18 jul), checkout WebView (#86) y chips de categoría vacíos hasta el PR #96 (~mañana del 20 jul). No concluya que la campaña falló por brechas clic→pedido en esta ventana."
+          : "Attribution data quality incomplete (Jul 16–20): bare Facebook links (no ?src=), first-touch gaps, fbclid fallback (~Jul 18 afternoon), WebView checkout (#86), and empty category chips until PR #96 (~Jul 20 morning). Do not conclude the campaign failed from click→order gaps in this window.";
     flags.push({
       code: ATTRIBUTION_INCOMPLETE_WINDOW.code,
       severity: "warn",
@@ -52,10 +54,10 @@ export function attributionDataQualityFlags(
   if (reportDate <= FB_WEBVIEW_LEARNING_CUTOFF.endInclusive) {
     const message =
       lang === "id"
-        ? "Checkout Facebook iOS WebView rusak sampai PR #86 (~18 Jul malam). Post FB sebelum/pada tanggal itu dikecualikan dari pembelajaran Content Engine (klik tanpa order bukan sinyal produk)."
+        ? "Checkout Facebook iOS WebView rusak sampai PR #86 (~18 Jul malam); chip kategori masih mengosongkan menu sampai PR #96 (~20 Jul pagi). Post FB sebelum/pada tanggal itu dikecualikan dari pembelajaran Content Engine (klik tanpa order bukan sinyal produk)."
         : lang === "es"
-          ? "El checkout de Facebook iOS WebView falló hasta el PR #86 (~noche del 18 jul). Las publicaciones de FB hasta esa fecha se excluyen del aprendizaje del Content Engine."
-          : "Facebook iOS WebView checkout was broken until PR #86 (~Jul 18 night). Facebook campaign posts on/before that date are excluded from Content Engine learning (clicks without orders are not a product signal).";
+          ? "El checkout de Facebook iOS WebView falló hasta el PR #86 (~noche del 18 jul); los chips de categoría vaciaban el menú hasta el PR #96 (~mañana del 20 jul). Las publicaciones de FB hasta esa fecha se excluyen del aprendizaje del Content Engine."
+          : "Facebook iOS WebView checkout was broken until PR #86 (~Jul 18 night); category chips still emptied the menu until PR #96 (~Jul 20 morning). Facebook campaign posts on/before that date are excluded from Content Engine learning (clicks without orders are not a product signal).";
     flags.push({
       code: FB_WEBVIEW_LEARNING_CUTOFF.code,
       severity: "warn",

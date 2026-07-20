@@ -76,12 +76,14 @@ describe("content calendar helpers", () => {
     );
   });
 
-  test("Content Engine past_performance excludes Jul 16–18 DQ window", () => {
+  test("Content Engine past_performance excludes Jul 16–20 DQ window", () => {
     expect(isInAttributionIncompleteWindow("2026-07-16T20:00:00.000Z")).toBe(
       true,
     );
     expect(isInAttributionIncompleteWindow("2026-07-18")).toBe(true);
-    expect(isInAttributionIncompleteWindow("2026-07-19")).toBe(false);
+    expect(isInAttributionIncompleteWindow("2026-07-19")).toBe(true);
+    expect(isInAttributionIncompleteWindow("2026-07-20")).toBe(true);
+    expect(isInAttributionIncompleteWindow("2026-07-21")).toBe(false);
     const filtered = filterPastPerformanceForContentEngine([
       {
         src: "fb-shrimpbento-20260716",
@@ -96,14 +98,20 @@ describe("content calendar helpers", () => {
         postedAt: "2026-07-17",
       },
       {
-        src: "fb-ok-20260719",
+        src: "fb-chip-era-20260719",
+        clicks: 52,
+        orders: 0,
+        postedAt: "2026-07-19T12:00:00.000Z",
+      },
+      {
+        src: "fb-ok-20260721",
         clicks: 5,
         orders: 2,
-        postedAt: "2026-07-19T12:00:00.000Z",
+        postedAt: "2026-07-21T12:00:00.000Z",
       },
     ]);
     expect(filtered).toHaveLength(1);
-    expect(filtered[0]!.src).toBe("fb-ok-20260719");
+    expect(filtered[0]!.src).toBe("fb-ok-20260721");
   });
 
   test("Content Engine excludes pre-WebView Facebook campaigns (before PR #86)", () => {
@@ -121,8 +129,14 @@ describe("content calendar helpers", () => {
     ).toBe(true);
     expect(
       isPreWebviewFacebookPerformance({
-        src: "fb-ok-20260719",
+        src: "fb-chip-era-20260719",
         postedAt: "2026-07-19",
+      }),
+    ).toBe(true);
+    expect(
+      isPreWebviewFacebookPerformance({
+        src: "fb-ok-20260721",
+        postedAt: "2026-07-21",
       }),
     ).toBe(false);
     expect(
@@ -157,9 +171,15 @@ describe("content calendar helpers", () => {
         orders: 1,
         postedAt: "2026-07-19",
       },
+      {
+        src: "fb-ok-20260721",
+        clicks: 4,
+        orders: 1,
+        postedAt: "2026-07-21",
+      },
     ]);
     expect(filtered.map((r) => r.src).sort()).toEqual([
-      "fb-rainbowroll-20260719",
+      "fb-ok-20260721",
       "ig-summer-20260715",
     ]);
   });

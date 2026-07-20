@@ -742,7 +742,7 @@ export async function fetchPastContentPerformance(
     .orderBy(desc(contentCalendarTable.orders))
     .limit(20);
 
-  // Exclude Jul 16–18 attribution-incomplete window so the AI does not
+  // Exclude Jul 16–20 attribution-incomplete window so the AI does not
   // treat click→0 gaps (bare FB links / first-touch bug) as real failures.
   return filterPastPerformanceForContentEngine(
     cal.map((r) => ({
