@@ -76,13 +76,21 @@ describe("content calendar helpers", () => {
     );
   });
 
-  test("Content Engine past_performance excludes Jul 16–20 DQ window", () => {
+  test("Content Engine past_performance excludes until PR #96 timestamp (not end of Jul 20)", () => {
     expect(isInAttributionIncompleteWindow("2026-07-16T20:00:00.000Z")).toBe(
       true,
     );
     expect(isInAttributionIncompleteWindow("2026-07-18")).toBe(true);
     expect(isInAttributionIncompleteWindow("2026-07-19")).toBe(true);
+    // Date-only Jul 20 → start of day UTC → still incomplete (conservative).
     expect(isInAttributionIncompleteWindow("2026-07-20")).toBe(true);
+    // After PR #96 merge instant — clean (Ron Morris-era / post-chip-fix).
+    expect(
+      isInAttributionIncompleteWindow("2026-07-20T06:17:38.000Z"),
+    ).toBe(false);
+    expect(
+      isInAttributionIncompleteWindow("2026-07-20T15:35:09.000Z"),
+    ).toBe(false);
     expect(isInAttributionIncompleteWindow("2026-07-21")).toBe(false);
     const filtered = filterPastPerformanceForContentEngine([
       {
@@ -104,14 +112,22 @@ describe("content calendar helpers", () => {
         postedAt: "2026-07-19T12:00:00.000Z",
       },
       {
+        src: "fb-page-cta-20260718",
+        clicks: 1,
+        orders: 1,
+        postedAt: "2026-07-20T15:35:09.000Z",
+      },
+      {
         src: "fb-ok-20260721",
         clicks: 5,
         orders: 2,
         postedAt: "2026-07-21T12:00:00.000Z",
       },
     ]);
-    expect(filtered).toHaveLength(1);
-    expect(filtered[0]!.src).toBe("fb-ok-20260721");
+    expect(filtered.map((r) => r.src)).toEqual([
+      "fb-page-cta-20260718",
+      "fb-ok-20260721",
+    ]);
   });
 
   test("Content Engine excludes pre-WebView Facebook campaigns (before PR #86)", () => {
@@ -133,6 +149,12 @@ describe("content calendar helpers", () => {
         postedAt: "2026-07-19",
       }),
     ).toBe(true);
+    expect(
+      isPreWebviewFacebookPerformance({
+        src: "fb-page-cta-20260718",
+        postedAt: "2026-07-20T15:35:09.000Z",
+      }),
+    ).toBe(false);
     expect(
       isPreWebviewFacebookPerformance({
         src: "fb-ok-20260721",

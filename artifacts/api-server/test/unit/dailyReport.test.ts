@@ -530,11 +530,12 @@ describe("daily report Phase 1 / narrative v2", () => {
       },
     });
     expect(insights[0]).toMatch(/Attribution data quality incomplete/i);
-    expect(insights[0]).toMatch(/Jul 16–20/i);
+    expect(insights[0]).toMatch(/PR #96/i);
     expect(insights[0]).toMatch(/Do not conclude the campaign failed/i);
-    // Second DQ flag: WebView + category-chip until PR #96 (CE learning).
+    // Second DQ flag: WebView + category-chip until PR #96 timestamp (CE learning).
     expect(insights[1]).toMatch(/WebView checkout was broken until PR #86/i);
     expect(insights[1]).toMatch(/PR #96/i);
+    expect(insights[1]).toMatch(/2026-07-20T06:17:38Z/i);
     expect(insights[2]).toMatch(/starts from zero on Facebook/i);
     expect(insights[2]).toMatch(/never measured fairly/i);
     expect(insights[3]).toMatch(/Reputation counts before Jul 20 are undercounts/i);

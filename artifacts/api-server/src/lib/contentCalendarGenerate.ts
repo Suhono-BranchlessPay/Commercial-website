@@ -326,7 +326,7 @@ export async function generateContentCalendarMonth(input: {
   const pastSocial = await socialPostsPerformance(input.tenantId);
   const past_content_performance = [...pastCal, ...pastSocial].slice(0, 20);
   const attribution_dq_note =
-    "Excluded posts dated 2026-07-16..2026-07-20 (attribution_incomplete): bare Facebook links / first-touch gaps / WebView checkout / category-chip empty menu until PR #96. Do not treat those click→0 rows as real failures; keep promoting proven sellers (e.g. Shrimp Bento, Hibachi).";
+    "Excluded posts before PR #96 deploy (2026-07-20T06:17:38Z) — attribution_incomplete: bare Facebook links / first-touch gaps / WebView checkout / category-chip empty menu. After that instant, FB click→order is usable. Do not treat pre-cutoff click→0 rows as real failures; keep promoting proven sellers (e.g. Shrimp Bento, Hibachi).";
 
   const holidays = usHolidaysForMonth(year, month);
   const localEvents = [
