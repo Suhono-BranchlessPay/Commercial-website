@@ -306,7 +306,8 @@ export function buildFactInsights(
       );
     }
   }
-  return out.slice(0, 3);
+  // Allow DQ flags (attribution + WebView + FB cold-start) plus one fact insight.
+  return out.slice(0, 4);
 }
 
 function buildFactNarrative(

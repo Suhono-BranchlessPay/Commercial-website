@@ -535,9 +535,11 @@ describe("daily report Phase 1 / narrative v2", () => {
     // Second DQ flag: WebView + category-chip until PR #96 (CE learning).
     expect(insights[1]).toMatch(/WebView checkout was broken until PR #86/i);
     expect(insights[1]).toMatch(/PR #96/i);
-    expect(insights[2]).toContain("Hibachi Chicken");
-    expect(insights[2]).toMatch(/Do not conclude campaign failure/i);
-    expect(insights[2]).not.toContain("try featuring");
+    expect(insights[2]).toMatch(/starts from zero on Facebook/i);
+    expect(insights[2]).toMatch(/never measured fairly/i);
+    expect(insights[3]).toContain("Hibachi Chicken");
+    expect(insights[3]).toMatch(/Do not conclude campaign failure/i);
+    expect(insights[3]).not.toContain("try featuring");
   });
 
   test("Indonesian HTML labels render", () => {

@@ -63,6 +63,17 @@ export function attributionDataQualityFlags(
       severity: "warn",
       message,
     });
+    const cold =
+      lang === "id"
+        ? "Content Engine memulai dari nol untuk Facebook: hampir seluruh klik→order FB 16–20 Jul tidak bisa dipakai belajar. Ini bukan berarti Facebook tidak pernah menghasilkan order — artinya belum pernah diukur dengan adil."
+        : lang === "es"
+          ? "El Content Engine empieza de cero en Facebook: casi todos los clic→pedido de FB del 16–20 jul no sirven para aprender. Eso no significa que Facebook nunca generó pedidos — significa que aún no se midió con justicia."
+          : "Content Engine starts from zero on Facebook: nearly all FB click→order data from Jul 16–20 is unusable for learning. That does not mean Facebook never drove orders — it means Facebook was never measured fairly.";
+    flags.push({
+      code: "fb_content_engine_cold_start",
+      severity: "info",
+      message: cold,
+    });
   }
   return flags;
 }
