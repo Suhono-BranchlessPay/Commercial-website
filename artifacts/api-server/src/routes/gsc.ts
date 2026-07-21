@@ -8,6 +8,7 @@
  * (https + same host only). Dashboard admin session not wired yet — ops token is
  * the fail-closed gate for multi-tenant.
  */
+import { timingSafeEqual } from "crypto";
 import { Router } from "express";
 import {
   buildGscOauthStartUrl,
@@ -30,7 +31,10 @@ function assertGscOpsToken(req: {
   const provided = String(
     req.query.token || req.headers["x-gsc-oauth-token"] || "",
   ).trim();
-  return provided === opsToken;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(opsToken);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
 }
 
 router.get("/oauth/start", async (req, res): Promise<void> => {
