@@ -1,12 +1,12 @@
 /**
  * Preflight before activating tenant-isolation fail-closed (maps + BP/DD).
  *
- * 1) Mirror global BRANCHLESSPAY_*/DOORDASH_* → TENANT_SAMURAI_* if missing
- * 2) Verify META_PAGE_ID_TENANT_MAP_JSON maps 1031895316670551 → samurai
+ * 1) Mirror global BRANCHLESSPAY_* and DOORDASH_* into TENANT_SAMURAI_* if missing
+ * 2) Verify META_PAGE_ID_TENANT_MAP_JSON maps 1031895316670551 to samurai
  * 3) Verify TENANT_SAMURAI_BRANCHLESSPAY_LICENSE_KEY (or BP_LICENSE_KEY) present
- * 4) If any DoorDash key exists, require all three TENANT_SAMURAI_DOORDASH_*
+ * 4) If any DoorDash key exists, require all three TENANT_SAMURAI_DOORDASH_* keys
  *
- * Exit 1 → deploy MUST NOT put fail-closed code into the running process.
+ * Exit 1 means deploy MUST NOT put fail-closed code into the running process.
  *
  * Usage: node scripts/deploy-preflight-tenant-isolation.mjs
  */
