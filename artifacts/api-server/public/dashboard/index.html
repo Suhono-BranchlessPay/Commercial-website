@@ -675,7 +675,7 @@ function renderSocialInbox(data, errMsg) {
   }
   const rows = (data && data.inbox) || [];
   if (!rows.length) {
-    setPagedRows('social', [], '<tr><td colspan="5" class="empty">No social messages yet — trial inbox is empty (samurai only). Needs Meta Page webhook + META_PAGE_ACCESS_TOKEN configured before anything appears here.</td></tr>');
+    setPagedRows('social', [], '<tr><td colspan="5" class="empty">No pending social messages for this tenant (actionable queue). Sent/skipped rows are hidden. If this stays empty after a new Page comment: check Connect Facebook Page + META_PAGE_ID_TENANT_MAP_JSON + webhook subscription.</td></tr>');
     return;
   }
   const visible = rows.filter((r) =>
