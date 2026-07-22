@@ -4,14 +4,14 @@
  * 2) Post-pay blockchain anchor via POST /api/v1/anchor (platform mode)
  * 3) Proof poll via GET /api/v1/anchor/{id} or ?reference_id= (proof-back)
  *
- * Secrets (per tenant, then global fallback):
- *   BRANCHLESSPAY_LICENSE_KEY  — Bearer for /api/v1/anchor
- *   BRANCHLESSPAY_API_KEY + BRANCHLESSPAY_MERCHANT_ID — optional shield pre-check
- *   BRANCHLESSPAY_WEBHOOK_SECRET — inbound proof callback (pos-native)
+ * Secrets (tenant-prefixed only — no global BRANCHLESSPAY_* fallback):
+ *   TENANT_{SLUG}_BRANCHLESSPAY_LICENSE_KEY  — Bearer for /api/v1/anchor
+ *   TENANT_{SLUG}_BRANCHLESSPAY_API_KEY + _MERCHANT_ID — optional shield
+ *   BRANCHLESSPAY_WEBHOOK_SECRET — inbound proof callback (platform-wide)
  */
 
 import { createHash } from "crypto";
-import { tenantSecret } from "../lib/tenant";
+import { tenantOnlySecret } from "../lib/tenant";
 
 const BP_ANCHOR_URL =
   process.env.BRANCHLESSPAY_ANCHOR_URL?.replace(/\/$/, "") ||
@@ -117,16 +117,20 @@ function parseAnchorResponse(data: Record<string, unknown>): AnchorProof {
 
 function licenseKey(slug: string): string | undefined {
   return (
-    tenantSecret(slug, "BRANCHLESSPAY_LICENSE_KEY") ||
-    tenantSecret(slug, "BP_LICENSE_KEY")
+    tenantOnlySecret(slug, "BRANCHLESSPAY_LICENSE_KEY") ||
+    tenantOnlySecret(slug, "BP_LICENSE_KEY")
   );
+}
+
+function merchantIdFor(slug: string): string {
+  return tenantOnlySecret(slug, "BRANCHLESSPAY_MERCHANT_ID") || slug;
 }
 
 export function isBranchlesspayConfigured(slug?: string): boolean {
   const s = slug ?? process.env.TENANT_ID?.trim() ?? "samurai";
   return Boolean(
-    tenantSecret(s, "BRANCHLESSPAY_API_KEY") &&
-      tenantSecret(s, "BRANCHLESSPAY_MERCHANT_ID"),
+    tenantOnlySecret(s, "BRANCHLESSPAY_API_KEY") &&
+      tenantOnlySecret(s, "BRANCHLESSPAY_MERCHANT_ID"),
   );
 }
 
@@ -161,11 +165,14 @@ export function legacyContentHash(payload: Record<string, unknown>): string {
 export async function auditOrderWithBpShield(
   input: AuditEventInput,
 ): Promise<AuditEventResult> {
-  const apiKey = tenantSecret(input.tenantSlug, "BRANCHLESSPAY_API_KEY");
-  const merchantId = tenantSecret(input.tenantSlug, "BRANCHLESSPAY_MERCHANT_ID");
+  const apiKey = tenantOnlySecret(input.tenantSlug, "BRANCHLESSPAY_API_KEY");
+  const merchantId = tenantOnlySecret(
+    input.tenantSlug,
+    "BRANCHLESSPAY_MERCHANT_ID",
+  );
   if (!apiKey || !merchantId) {
     throw new Error(
-      "Branchlesspay shield not configured. Set BRANCHLESSPAY_API_KEY and BRANCHLESSPAY_MERCHANT_ID.",
+      "Branchlesspay shield not configured. Set TENANT_{SLUG}_BRANCHLESSPAY_API_KEY and _MERCHANT_ID.",
     );
   }
 
@@ -242,10 +249,7 @@ export async function anchorPaidOrder(
     reference_id: input.orderId,
     amount: input.total,
     currency: input.currency ?? "USD",
-    merchant_id:
-      process.env.BRANCHLESSPAY_MERCHANT_ID?.trim() ||
-      tenantSecret(input.tenantSlug, "BRANCHLESSPAY_MERCHANT_ID") ||
-      "orderly",
+    merchant_id: merchantIdFor(input.tenantSlug),
     timestamp: new Date().toISOString(),
     /** Alias some BP builds accept instead of timestamp */
     ts: new Date().toISOString(),
@@ -342,10 +346,7 @@ export async function anchorRefundedOrder(input: {
     reference_id: referenceId,
     amount,
     currency: input.currency ?? "USD",
-    merchant_id:
-      process.env.BRANCHLESSPAY_MERCHANT_ID?.trim() ||
-      tenantSecret(input.tenantSlug, "BRANCHLESSPAY_MERCHANT_ID") ||
-      "orderly",
+    merchant_id: merchantIdFor(input.tenantSlug),
     timestamp: new Date().toISOString(),
     ts: new Date().toISOString(),
     items: [],
@@ -539,10 +540,7 @@ export async function createLoyaltyAnchor(input: {
     reference_id: input.txnId,
     amount: 0,
     currency: "USD",
-    merchant_id:
-      process.env.BRANCHLESSPAY_MERCHANT_ID?.trim() ||
-      tenantSecret(slug, "BRANCHLESSPAY_MERCHANT_ID") ||
-      "orderly",
+    merchant_id: merchantIdFor(slug),
     timestamp: new Date().toISOString(),
     ts: new Date().toISOString(),
     metadata: {

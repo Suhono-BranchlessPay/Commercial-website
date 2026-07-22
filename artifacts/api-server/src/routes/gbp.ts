@@ -105,8 +105,17 @@ router.post("/webhooks/gbp", async (req, res): Promise<void> => {
     const messages = parseGbpWebhookBody(req.body);
     let ingested = 0;
     let duplicates = 0;
+    let skippedUnmapped = 0;
     for (const msg of messages) {
       const tenantId = resolveTenantIdForGbpLocation(msg.locationId);
+      if (!tenantId) {
+        skippedUnmapped += 1;
+        req.log?.warn(
+          { locationId: msg.locationId ?? null },
+          "GBP webhook dropped — locationId not in GBP_LOCATION_ID_TENANT_MAP_JSON",
+        );
+        continue;
+      }
       const row = await ingestGbpMessage({
         tenantId,
         kind: msg.kind,
@@ -130,6 +139,7 @@ router.post("/webhooks/gbp", async (req, res): Promise<void> => {
       ok: true,
       ingested,
       duplicates,
+      skipped_unmapped: skippedUnmapped,
       note: "receive-only — no reply sent",
     });
   } catch (err) {
@@ -293,9 +303,14 @@ router.post("/simulate", async (req, res): Promise<void> => {
     }
     const d = parsed.data;
     const tenantId =
-      d.tenant_id?.trim() ||
-      resolveTenantIdForGbpLocation(d.location_id) ||
-      "samurai";
+      d.tenant_id?.trim() || resolveTenantIdForGbpLocation(d.location_id) || null;
+    if (!tenantId) {
+      res.status(400).json({
+        error:
+          "tenant_id required, or location_id must be in GBP_LOCATION_ID_TENANT_MAP_JSON",
+      });
+      return;
+    }
 
     if (!(GBP_TRIAL_TENANT_IDS as readonly string[]).includes(tenantId)) {
       res.status(403).json({

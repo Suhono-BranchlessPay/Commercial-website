@@ -107,19 +107,22 @@ export function getSocialKnowledgeBase(tenantId: string): string {
 /**
  * Map a Meta Page ID to an Orderly tenant id. Configure via
  * META_PAGE_ID_TENANT_MAP_JSON = {"<pageId>":"samurai"}.
- * Falls back to SOCIAL_DEFAULT_TENANT_ID (default "samurai") since the trial
- * is intentionally single-tenant — do NOT rely on the fallback once a second
- * tenant is onboarded.
+ * Fail-closed: unmapped / missing pageId / bad JSON → null (caller must drop).
+ * Never default to "samurai" — that would route Kirin (or unknown) traffic
+ * into Samurai inbox once a second Page is connected.
  */
-export function resolveTenantIdForPageId(pageId: string | undefined): string {
+export function resolveTenantIdForPageId(
+  pageId: string | undefined,
+): string | null {
+  if (!pageId?.trim()) return null;
   const json = process.env.META_PAGE_ID_TENANT_MAP_JSON?.trim();
-  if (json && pageId) {
-    try {
-      const map = JSON.parse(json) as Record<string, string>;
-      if (map[pageId]) return map[pageId];
-    } catch {
-      /* fall through to default */
-    }
+  if (!json) return null;
+  try {
+    const map = JSON.parse(json) as Record<string, string>;
+    const hit = map[pageId.trim()];
+    if (typeof hit === "string" && hit.trim()) return hit.trim();
+  } catch {
+    /* bad JSON → fail closed */
   }
-  return process.env.SOCIAL_DEFAULT_TENANT_ID?.trim() || "samurai";
+  return null;
 }

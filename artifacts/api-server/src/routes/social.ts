@@ -189,9 +189,18 @@ router.post("/webhooks/meta", async (req, res): Promise<void> => {
     const messages = parseMetaWebhookBody(payload);
     let ingested = 0;
     let duplicates = 0;
+    let skippedUnmapped = 0;
 
     for (const msg of messages) {
       const tenantId = resolveTenantIdForPageId(msg.pageId);
+      if (!tenantId) {
+        skippedUnmapped += 1;
+        req.log?.warn(
+          { pageId: msg.pageId ?? null },
+          "Meta webhook dropped — pageId not in META_PAGE_ID_TENANT_MAP_JSON",
+        );
+        continue;
+      }
       const row = await ingestInboundMessage({
         tenantId,
         platform: msg.platform,
@@ -222,7 +231,13 @@ router.post("/webhooks/meta", async (req, res): Promise<void> => {
 
     // Always 200 quickly — Meta retries aggressively on non-2xx/slow responses.
     // NEVER send a reply from this handler.
-    res.status(200).json({ ok: true, ingested, duplicates, note: "receive-only — no reply sent" });
+    res.status(200).json({
+      ok: true,
+      ingested,
+      duplicates,
+      skipped_unmapped: skippedUnmapped,
+      note: "receive-only — no reply sent",
+    });
   } catch (err) {
     req.log?.error({ err }, "Meta webhook receive failed");
     // Still 200 so Meta doesn't hammer retries for a parsing bug on our side —

@@ -7,7 +7,7 @@ import { createHmac, randomUUID } from "crypto";
 import type { StructuredAddress } from "../lib/address";
 import { addressFingerprint, formatAddress } from "../lib/address";
 import { normalizePhoneE164 } from "../lib/phone";
-import { tenantSecret, type TenantContext } from "../lib/tenant";
+import { tenantOnlySecret, type TenantContext } from "../lib/tenant";
 
 const DOORDASH_BASE_URL =
   process.env.DOORDASH_API_BASE?.replace(/\/$/, "") ??
@@ -75,9 +75,10 @@ type DdCreds = {
 };
 
 function resolveDdCreds(slug: string): DdCreds | null {
-  const developerId = tenantSecret(slug, "DOORDASH_DEVELOPER_ID");
-  const keyId = tenantSecret(slug, "DOORDASH_KEY_ID");
-  const signingSecret = tenantSecret(slug, "DOORDASH_SIGNING_SECRET");
+  // Tenant-prefixed only — never global DOORDASH_* (cross-tenant leak).
+  const developerId = tenantOnlySecret(slug, "DOORDASH_DEVELOPER_ID");
+  const keyId = tenantOnlySecret(slug, "DOORDASH_KEY_ID");
+  const signingSecret = tenantOnlySecret(slug, "DOORDASH_SIGNING_SECRET");
   if (!developerId || !keyId || !signingSecret) return null;
   return { developerId, keyId, signingSecret };
 }

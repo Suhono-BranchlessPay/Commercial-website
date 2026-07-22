@@ -2,14 +2,13 @@
  * Blok 4.2 — Google Business Profile trial config.
  *
  * Access tokens are resolved in this order (first hit wins):
- *   1. GBP_ACCESS_TOKEN (manual short-lived paste — env)
- *   2. GBP_REFRESH_TOKEN + GOOGLE_OAUTH_CLIENT_ID/SECRET (env offline token)
- *   3. A self-serve OAuth connection in gbp_oauth_connections (Stage 2) —
- *      the refresh token there is encrypted at rest (lib/tokenCrypto.ts).
- * Minted access tokens live in-memory only; refresh tokens from env are never
- * persisted. See docs/BLOK4_GBP_TRIAL.md.
+ *   1. Self-serve OAuth connection in gbp_oauth_connections (encrypted refresh)
+ *   2. TENANT_{ID}_GBP_ACCESS_TOKEN (manual short-lived — tenant-prefixed only)
+ *   3. TENANT_{ID}_GBP_REFRESH_TOKEN + GOOGLE_OAUTH_CLIENT_ID/SECRET
+ * Never use global GBP_* env (cross-tenant leak). Minted access tokens live
+ * in-memory only. See docs/BLOK4_GBP_TRIAL.md.
  */
-import { tenantSecret } from "./tenant";
+import { tenantOnlySecret } from "./tenant";
 import { getGbpOauthConnection } from "./gbpOauth";
 import { decryptToken } from "./tokenCrypto";
 
@@ -39,19 +38,20 @@ export function isGbpAutoDraftEnabled(): boolean {
 /**
  * Google Business Profile location resource for a tenant, e.g.
  * "accounts/1234567890/locations/9876543210". Used to list reviews.
+ * Tenant-prefixed env only — no global GBP_LOCATION_RESOURCE fallback.
  */
 export function getGbpLocationResource(tenantId: string): string | undefined {
-  return tenantSecret(tenantId, "GBP_LOCATION_RESOURCE");
+  return tenantOnlySecret(tenantId, "GBP_LOCATION_RESOURCE");
 }
 
-/** Per-tenant then global GBP OAuth access token (manual/short-lived override). */
+/** Tenant-prefixed manual/short-lived access token (no global fallback). */
 export function getGbpAccessToken(tenantId: string): string | undefined {
-  return tenantSecret(tenantId, "GBP_ACCESS_TOKEN");
+  return tenantOnlySecret(tenantId, "GBP_ACCESS_TOKEN");
 }
 
-/** Long-lived OAuth refresh token (obtained once via the offline consent flow). */
+/** Long-lived OAuth refresh token from tenant-prefixed env only. */
 function getGbpRefreshToken(tenantId: string): string | undefined {
-  return tenantSecret(tenantId, "GBP_REFRESH_TOKEN");
+  return tenantOnlySecret(tenantId, "GBP_REFRESH_TOKEN");
 }
 
 function getGoogleOAuthClient(): { clientId: string; clientSecret: string } | null {
@@ -99,11 +99,22 @@ async function mintAccessTokenFromRefresh(
 }
 
 /**
- * Resolve a usable Google access token for a tenant. Tries (in order): manual
- * env token, env refresh token, then the self-serve OAuth connection (DB).
+ * Resolve a usable Google access token for a tenant. Tries (in order):
+ * self-serve OAuth DB, then tenant-prefixed env access/refresh.
  * Returns undefined when nothing is configured (send/sync then 501).
  */
 export async function resolveGbpAccessToken(tenantId: string): Promise<string | undefined> {
+  try {
+    const conn = await getGbpOauthConnection(tenantId);
+    if (conn?.refreshTokenEnc) {
+      const refresh = decryptToken(conn.refreshTokenEnc);
+      const tok = await mintAccessTokenFromRefresh(`${tenantId}:db`, refresh);
+      if (tok) return tok;
+    }
+  } catch {
+    /* non-fatal — fall through to tenant env */
+  }
+
   const manual = getGbpAccessToken(tenantId);
   if (manual) return manual;
 
@@ -113,56 +124,49 @@ export async function resolveGbpAccessToken(tenantId: string): Promise<string | 
     if (tok) return tok;
   }
 
-  try {
-    const conn = await getGbpOauthConnection(tenantId);
-    if (conn?.refreshTokenEnc) {
-      const refresh = decryptToken(conn.refreshTokenEnc);
-      const tok = await mintAccessTokenFromRefresh(`${tenantId}:db`, refresh);
-      if (tok) return tok;
-    }
-  } catch {
-    /* non-fatal — treated as "no token" (501 upstream) */
-  }
-
   return undefined;
 }
 
 /**
  * Resolve the Business Profile location resource for a tenant. Prefers the
- * env override, then the self-serve OAuth connection discovered at connect time.
+ * self-serve OAuth connection, then tenant-prefixed env override.
  */
 export async function resolveGbpLocationResource(
   tenantId: string,
 ): Promise<string | undefined> {
-  const envLoc = getGbpLocationResource(tenantId);
-  if (envLoc) return envLoc;
   try {
     const conn = await getGbpOauthConnection(tenantId);
     if (conn?.locationResource) return conn.locationResource;
   } catch {
     /* non-fatal */
   }
-  return undefined;
+  return getGbpLocationResource(tenantId);
 }
 
 /**
  * Map Google Business Profile location resource name / id → tenant.
  * Example: {"locations/12345":"samurai"} or {"12345":"samurai"}
+ * Fail-closed: unmapped / missing / bad JSON → null (caller must drop).
  */
 export function resolveTenantIdForGbpLocation(
   locationId: string | null | undefined,
-): string {
+): string | null {
+  if (!locationId?.trim()) return null;
   const raw = process.env.GBP_LOCATION_ID_TENANT_MAP_JSON?.trim();
-  if (raw && locationId) {
-    try {
-      const map = JSON.parse(raw) as Record<string, string>;
-      const hit = map[locationId] || map[locationId.replace(/^locations\//, "")];
-      if (hit && typeof hit === "string") return hit.trim();
-    } catch {
-      /* ignore bad JSON */
-    }
+  if (!raw) return null;
+  try {
+    const map = JSON.parse(raw) as Record<string, string>;
+    const id = locationId.trim();
+    const bare = id.replace(/^locations\//, "");
+    const hit =
+      map[id] ||
+      map[bare] ||
+      map[`locations/${bare}`];
+    if (hit && typeof hit === "string" && hit.trim()) return hit.trim();
+  } catch {
+    /* bad JSON → fail closed */
   }
-  return process.env.GBP_DEFAULT_TENANT_ID?.trim() || "samurai";
+  return null;
 }
 
 export async function buildGbpHealth(tenantIds: readonly string[]) {
@@ -189,7 +193,7 @@ export async function buildGbpHealth(tenantIds: readonly string[]) {
         send_globally_enabled: isGbpSendGloballyEnabled(),
         gbp_token_configured: Boolean(getGbpAccessToken(tenant_id)),
         gbp_oauth_configured: Boolean(
-          tenantSecret(tenant_id, "GBP_REFRESH_TOKEN") && oauthAppConfigured,
+          tenantOnlySecret(tenant_id, "GBP_REFRESH_TOKEN") && oauthAppConfigured,
         ),
         // Self-serve OAuth connection (Stage 2).
         oauth_app_configured: oauthAppConfigured,
