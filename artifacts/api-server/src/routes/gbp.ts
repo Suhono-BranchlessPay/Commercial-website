@@ -26,6 +26,7 @@ import {
   verifyGbpOauthState,
 } from "../lib/gbpOauth";
 import { parseGbpWebhookBody } from "../lib/gbpWebhook";
+import { recordGbpUnmappedSkip } from "../lib/webhookUnmappedStats";
 import {
   approveGbpInboxRow,
   autoDraftGbpForRow,
@@ -110,9 +111,15 @@ router.post("/webhooks/gbp", async (req, res): Promise<void> => {
       const tenantId = resolveTenantIdForGbpLocation(msg.locationId);
       if (!tenantId) {
         skippedUnmapped += 1;
-        req.log?.warn(
-          { locationId: msg.locationId ?? null },
-          "GBP webhook dropped — locationId not in GBP_LOCATION_ID_TENANT_MAP_JSON",
+        recordGbpUnmappedSkip(msg.locationId);
+        req.log?.error(
+          {
+            event: "gbp_webhook_unmapped_location",
+            locationId: msg.locationId ?? null,
+            externalMessageId: msg.externalMessageId ?? null,
+            kind: msg.kind,
+          },
+          "FAIL-CLOSED: GBP webhook dropped — locationId not in GBP_LOCATION_ID_TENANT_MAP_JSON",
         );
         continue;
       }
@@ -134,6 +141,17 @@ router.post("/webhooks/gbp", async (req, res): Promise<void> => {
       } else {
         duplicates += 1;
       }
+    }
+    if (skippedUnmapped > 0) {
+      req.log?.error(
+        {
+          event: "gbp_webhook_unmapped_batch",
+          skipped_unmapped: skippedUnmapped,
+          ingested,
+          duplicates,
+        },
+        "FAIL-CLOSED: GBP webhook batch had unmapped locationId(s) — check /api/gbp/health webhook_unmapped_skips",
+      );
     }
     res.status(200).json({
       ok: true,

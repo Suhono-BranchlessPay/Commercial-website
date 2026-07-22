@@ -23,6 +23,7 @@ import {
   resolveTenantIdForPageId,
 } from "../lib/socialConfig";
 import { parseMetaWebhookBody, verifyMetaSignature } from "../lib/socialWebhook";
+import { recordMetaUnmappedSkip } from "../lib/webhookUnmappedStats";
 import {
   approveInboxRow,
   autoDraftForRow,
@@ -195,9 +196,15 @@ router.post("/webhooks/meta", async (req, res): Promise<void> => {
       const tenantId = resolveTenantIdForPageId(msg.pageId);
       if (!tenantId) {
         skippedUnmapped += 1;
-        req.log?.warn(
-          { pageId: msg.pageId ?? null },
-          "Meta webhook dropped — pageId not in META_PAGE_ID_TENANT_MAP_JSON",
+        recordMetaUnmappedSkip(msg.pageId);
+        req.log?.error(
+          {
+            event: "meta_webhook_unmapped_page",
+            pageId: msg.pageId ?? null,
+            externalMessageId: msg.externalMessageId ?? null,
+            kind: msg.kind,
+          },
+          "FAIL-CLOSED: Meta webhook dropped — pageId not in META_PAGE_ID_TENANT_MAP_JSON (fix map before Kirin/Page goes live)",
         );
         continue;
       }
@@ -231,6 +238,17 @@ router.post("/webhooks/meta", async (req, res): Promise<void> => {
 
     // Always 200 quickly — Meta retries aggressively on non-2xx/slow responses.
     // NEVER send a reply from this handler.
+    if (skippedUnmapped > 0) {
+      req.log?.error(
+        {
+          event: "meta_webhook_unmapped_batch",
+          skipped_unmapped: skippedUnmapped,
+          ingested,
+          duplicates,
+        },
+        "FAIL-CLOSED: Meta webhook batch had unmapped pageId(s) — check /api/social/health webhook_unmapped_skips",
+      );
+    }
     res.status(200).json({
       ok: true,
       ingested,

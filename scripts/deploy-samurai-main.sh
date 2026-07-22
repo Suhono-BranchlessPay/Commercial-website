@@ -37,6 +37,13 @@ if [[ ! -f scripts/deploy-preflight-tenant-money.mjs ]]; then
 fi
 node scripts/deploy-preflight-tenant-money.mjs
 
+echo "== 2b/6 PREFLIGHT tenant isolation (Meta map + BP/DD prefixed) =="
+if [[ ! -f scripts/deploy-preflight-tenant-isolation.mjs ]]; then
+  echo "ERROR: missing scripts/deploy-preflight-tenant-isolation.mjs"
+  exit 1
+fi
+node scripts/deploy-preflight-tenant-isolation.mjs
+
 echo "== 3/6 build api =="
 pnpm --filter @workspace/api-server run build 2>&1 | tail -30
 

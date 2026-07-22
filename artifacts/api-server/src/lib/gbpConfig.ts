@@ -11,6 +11,7 @@
 import { tenantOnlySecret } from "./tenant";
 import { getGbpOauthConnection } from "./gbpOauth";
 import { decryptToken } from "./tokenCrypto";
+import { getGbpUnmappedSkipStats } from "./webhookUnmappedStats";
 
 /** Hard-coded trial allow-list (same as social 4.1). */
 export const GBP_TRIAL_TENANT_IDS = ["samurai"] as const;
@@ -211,5 +212,6 @@ export async function buildGbpHealth(tenantIds: readonly string[]) {
     auto_draft_enabled: isGbpAutoDraftEnabled(),
     oauth_app_configured: oauthAppConfigured,
     tenants,
+    webhook_unmapped_skips: getGbpUnmappedSkipStats(),
   };
 }
