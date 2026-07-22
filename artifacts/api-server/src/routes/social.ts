@@ -23,6 +23,7 @@ import {
   resolveTenantIdForPageId,
 } from "../lib/socialConfig";
 import { parseMetaWebhookBody, verifyMetaSignature } from "../lib/socialWebhook";
+import { recordMetaUnmappedSkip } from "../lib/webhookUnmappedStats";
 import {
   approveInboxRow,
   autoDraftForRow,
@@ -189,9 +190,24 @@ router.post("/webhooks/meta", async (req, res): Promise<void> => {
     const messages = parseMetaWebhookBody(payload);
     let ingested = 0;
     let duplicates = 0;
+    let skippedUnmapped = 0;
 
     for (const msg of messages) {
       const tenantId = resolveTenantIdForPageId(msg.pageId);
+      if (!tenantId) {
+        skippedUnmapped += 1;
+        recordMetaUnmappedSkip(msg.pageId);
+        req.log?.error(
+          {
+            event: "meta_webhook_unmapped_page",
+            pageId: msg.pageId ?? null,
+            externalMessageId: msg.externalMessageId ?? null,
+            kind: msg.kind,
+          },
+          "FAIL-CLOSED: Meta webhook dropped — pageId not in META_PAGE_ID_TENANT_MAP_JSON (fix map before Kirin/Page goes live)",
+        );
+        continue;
+      }
       const row = await ingestInboundMessage({
         tenantId,
         platform: msg.platform,
@@ -222,7 +238,24 @@ router.post("/webhooks/meta", async (req, res): Promise<void> => {
 
     // Always 200 quickly — Meta retries aggressively on non-2xx/slow responses.
     // NEVER send a reply from this handler.
-    res.status(200).json({ ok: true, ingested, duplicates, note: "receive-only — no reply sent" });
+    if (skippedUnmapped > 0) {
+      req.log?.error(
+        {
+          event: "meta_webhook_unmapped_batch",
+          skipped_unmapped: skippedUnmapped,
+          ingested,
+          duplicates,
+        },
+        "FAIL-CLOSED: Meta webhook batch had unmapped pageId(s) — check /api/social/health webhook_unmapped_skips",
+      );
+    }
+    res.status(200).json({
+      ok: true,
+      ingested,
+      duplicates,
+      skipped_unmapped: skippedUnmapped,
+      note: "receive-only — no reply sent",
+    });
   } catch (err) {
     req.log?.error({ err }, "Meta webhook receive failed");
     // Still 200 so Meta doesn't hammer retries for a parsing bug on our side —

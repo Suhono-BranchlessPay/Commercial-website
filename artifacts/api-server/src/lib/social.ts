@@ -47,6 +47,7 @@ import {
   isSocialSendGloballyEnabled,
 } from "./socialConfig";
 import { resolveMetaPageAccessToken } from "./metaOauth";
+import { getMetaUnmappedSkipStats } from "./webhookUnmappedStats";
 import {
   fetchRecentPageComments,
   fetchRecentPageTaggedPosts,
@@ -1341,6 +1342,11 @@ export type SocialTenantHealth = {
 export async function buildSocialHealth(tenantIds: string[]): Promise<{
   send_globally_enabled: boolean;
   tenants: SocialTenantHealth[];
+  webhook_unmapped_skips: {
+    total: number;
+    last_at: string | null;
+    last_id: string | null;
+  };
 }> {
   const tenants: SocialTenantHealth[] = [];
   for (const tenantId of tenantIds) {
@@ -1356,6 +1362,7 @@ export async function buildSocialHealth(tenantIds: string[]): Promise<{
   return {
     send_globally_enabled: isSocialSendGloballyEnabled(),
     tenants,
+    webhook_unmapped_skips: getMetaUnmappedSkipStats(),
   };
 }
 
